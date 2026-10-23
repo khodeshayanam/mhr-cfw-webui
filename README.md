@@ -7,6 +7,8 @@
 > ما رله و منطق Domain-Fronting را نساخته‌ایم.  
 > فقط یک رابط گرافیکی ساخته‌ایم تا راه‌اندازی و استفاده برای کاربران ساده‌تر شود.
 
+پروژه اصلی: https://github.com/denuitt1/mhr-cfw
+
 ---
 
 ## قابلیت‌ها
@@ -66,9 +68,11 @@ http://127.0.0.1:5050
 ### بار اول
 
 1. بخش **پیکربندی** را باز کنید.
-2. Auth Key و Deployment ID را وارد کنید.
+2. Auth Key و Deployment ID را وارد کنید (دقیقاً همان مقادیر `Code.gs` و دیپلویمنت GAS).
 3. **ذخیره تنظیمات** را بزنید.
 4. **شروع پروکسی** را بزنید.
+
+> اگر با ترمینال (`python main.py`) سایت‌ها باز می‌شوند ولی از Web UI خطای `upstream HTTP 400` می‌گیرید، یک‌بار از داخل Web UI تنظیمات را دوباره ذخیره کنید تا `config.json` درست نرمال شود.
 
 ---
 
@@ -88,10 +92,6 @@ http://127.0.0.1:5050
 | رله، GAS، Cloudflare Worker، منطق MITM | **denuitt1** — [mhr-cfw](https://github.com/denuitt1/mhr-cfw) |
 | این Web UI (رابط، تم، زبان، Start/Stop) | همین مخزن |
 
-لطفاً پروژه اصلی را ستاره بزنید و حمایت کنید:
-
-https://github.com/denuitt1/mhr-cfw
-
 ---
 
 ## ساختار پوشه
@@ -110,19 +110,6 @@ mhr-cfw-webui/
 ├── templates/
 ├── static/
 └── README.md
-```
-
----
-
-## انتشار روی GitHub خودتان
-
-```bash
-git init
-git add .
-git commit -m "MHR-CFW Web UI — helper for denuitt1/mhr-cfw"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/mhr-cfw-webui.git
-git push -u origin main
 ```
 
 ---

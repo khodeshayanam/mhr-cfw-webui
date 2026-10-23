@@ -147,17 +147,58 @@ def is_config_ready(cfg: dict | None = None) -> bool:
 
 
 def save_config(data: dict) -> None:
-    sid = data.get("script_id") or data.get("script_ids")
-    if isinstance(sid, str) and "," in sid:
-        ids = [x.strip() for x in sid.split(",") if x.strip()]
-        if len(ids) > 1:
-            data["script_ids"] = ids
-            data.pop("script_id", None)
-        else:
-            data["script_id"] = ids[0] if ids else ""
-            data.pop("script_ids", None)
+    """Merge with existing/example defaults and normalize script_id fields.
+
+    Critical: never leave both script_id and script_ids set — the core
+    prefers script_ids when present, which can silently use stale IDs.
+    """
+    base: dict = {}
+    if EXAMPLE_PATH.exists():
+        try:
+            with EXAMPLE_PATH.open(encoding="utf-8") as f:
+                base = json.load(f)
+        except Exception:
+            base = {}
+    if CONFIG_PATH.exists():
+        try:
+            with CONFIG_PATH.open(encoding="utf-8") as f:
+                existing = json.load(f)
+            base.update(existing)
+        except Exception:
+            pass
+    base.update(data)
+    base["mode"] = "apps_script"
+
+    # Normalize auth_key
+    auth = str(base.get("auth_key") or "").strip()
+    base["auth_key"] = auth
+
+    # Normalize script id(s) — exclusive
+    raw = base.get("script_id")
+    if raw is None or raw == "":
+        raw = base.get("script_ids")
+    ids: list[str] = []
+    if isinstance(raw, list):
+        ids = [str(x).strip() for x in raw if str(x).strip()]
+    elif isinstance(raw, str):
+        ids = [x.strip() for x in raw.split(",") if x.strip()]
+    # Drop placeholder values
+    placeholders = {
+        "",
+        "YOUR_APPS_SCRIPT_DEPLOYMENT_ID",
+        "CHANGE_ME_TO_A_STRONG_SECRET",
+        "your-secret-password-here",
+    }
+    ids = [i for i in ids if i not in placeholders]
+    base.pop("script_id", None)
+    base.pop("script_ids", None)
+    if len(ids) > 1:
+        base["script_ids"] = ids
+    elif len(ids) == 1:
+        base["script_id"] = ids[0]
+
     with CONFIG_PATH.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        json.dump(base, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
 
@@ -189,23 +230,23 @@ def api_config():
     if request.method == "GET":
         return jsonify(load_config())
     data = request.get_json(force=True, silent=True) or {}
-    cfg = load_config()
-    cfg.update(data)
-    cfg["mode"] = "apps_script"
-    if "listen_port" in cfg:
+    # Coerce types from the form
+    if "listen_port" in data:
         try:
-            cfg["listen_port"] = int(cfg["listen_port"])
+            data["listen_port"] = int(data["listen_port"])
         except (TypeError, ValueError):
-            cfg["listen_port"] = 8085
-    if "socks5_port" in cfg:
+            data["listen_port"] = 8085
+    if "socks5_port" in data:
         try:
-            cfg["socks5_port"] = int(cfg["socks5_port"])
+            data["socks5_port"] = int(data["socks5_port"])
         except (TypeError, ValueError):
-            cfg["socks5_port"] = 1080
+            data["socks5_port"] = 1080
     for bkey in ("socks5_enabled", "lan_sharing", "verify_ssl", "youtube_via_relay"):
-        if bkey in cfg:
-            cfg[bkey] = bool(cfg[bkey])
-    save_config(cfg)
+        if bkey in data:
+            data[bkey] = bool(data[bkey])
+    data["mode"] = "apps_script"
+    save_config(data)
+    cfg = load_config()
     return jsonify({"ok": True, "config": cfg, "config_ready": is_config_ready(cfg)})
 
 
