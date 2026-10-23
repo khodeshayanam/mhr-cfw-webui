@@ -6,6 +6,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 let socket = null;
 let isRunning = false;
 let configReady = false;
+let lastProxyInfo = null;
 
 function setTheme(name) {
   document.documentElement.setAttribute("data-theme", name);
@@ -69,6 +70,7 @@ function clearLogs() {
 
 function renderDeps(deps) {
   const list = $("#depList");
+  if (!list) return;
   list.innerHTML = "";
   Object.entries(deps || {}).forEach(([name, ok]) => {
     const li = document.createElement("li");
@@ -83,18 +85,108 @@ function updateHeroHint() {
   hint.textContent = configReady ? t("hero.hint_ready") : t("hero.hint_setup");
 }
 
+// ── Proxy config cards ─────────────────────────────────────────────────────
+function renderProxyConfigs(info) {
+  lastProxyInfo = info;
+  if (!info) return;
+  const host = info.host || "127.0.0.1";
+  const httpPort = info.http_port || 8085;
+  const socksPort = info.socks5_port || 1080;
+  const name = info.name || "mhr-cfw";
+
+  const socksText = [
+    "Name: " + name,
+    "Type: SOCKS5",
+    "Address: " + host,
+    "Port: " + socksPort,
+    "",
+    "URL: socks5://" + host + ":" + socksPort,
+  ].join("\n");
+
+  const httpText = [
+    "Name: " + name,
+    "Type: HTTP",
+    "Address: " + host,
+    "Port: " + httpPort,
+    "",
+    "URL: http://" + host + ":" + httpPort,
+  ].join("\n");
+
+  const tgText = [
+    "Telegram → Settings → Data and Storage → Proxy",
+    "Type: SOCKS5",
+    "Server: " + host,
+    "Port: " + socksPort,
+    "Username: (empty)",
+    "Password: (empty)",
+    "",
+    "socks5://" + host + ":" + socksPort,
+  ].join("\n");
+
+  const elSocks = document.getElementById("cfgSocks");
+  const elHttp = document.getElementById("cfgHttp");
+  const elTg = document.getElementById("cfgTelegram");
+  if (elSocks) elSocks.textContent = socksText;
+  if (elHttp) elHttp.textContent = httpText;
+  if (elTg) elTg.textContent = tgText;
+
+  const lanNote = document.getElementById("lanNote");
+  if (lanNote) {
+    if (info.lan_sharing && info.lan_ips && info.lan_ips.length) {
+      lanNote.hidden = false;
+      lanNote.textContent = t("configs.lan_note") + " IP: " + info.lan_ips.join(", ");
+    } else {
+      lanNote.hidden = true;
+    }
+  }
+}
+
+async function refreshProxyConfigs() {
+  try {
+    const r = await fetch("/api/proxy-info");
+    const data = await r.json();
+    renderProxyConfigs(data);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function copyConfig(kind) {
+  if (!lastProxyInfo) return;
+  const host = lastProxyInfo.host || "127.0.0.1";
+  const httpPort = lastProxyInfo.http_port || 8085;
+  const socksPort = lastProxyInfo.socks5_port || 1080;
+  let text = "";
+  if (kind === "socks") {
+    text = "socks5://" + host + ":" + socksPort;
+  } else if (kind === "http") {
+    text = "http://" + host + ":" + httpPort;
+  } else if (kind === "telegram") {
+    text = "socks5://" + host + ":" + socksPort;
+  }
+  navigator.clipboard.writeText(text).then(() => {
+    toast(t("toast.copied_cfg"), "success");
+  }).catch(() => {});
+}
+
 async function refreshStatus() {
   try {
     const r = await fetch("/api/status");
     const data = await r.json();
     isRunning = !!data.running;
     configReady = !!data.config_ready;
-    $("#statusDot").className = "dot big " + (isRunning ? "running" : "stopped");
-    $("#statusText").textContent = isRunning ? t("status.running") : t("status.stopped");
-    $("#reqCount").textContent = data.requests ?? 0;
-    $("#pidVal").textContent = data.pid ?? "—";
-    $("#btnStart").disabled = isRunning;
-    $("#btnStop").disabled = !isRunning;
+    const dot = $("#statusDot");
+    if (dot) dot.className = "dot big " + (isRunning ? "running" : "stopped");
+    const st = $("#statusText");
+    if (st) st.textContent = isRunning ? t("status.running") : t("status.stopped");
+    const rc = $("#reqCount");
+    if (rc) rc.textContent = data.requests ?? 0;
+    const pid = $("#pidVal");
+    if (pid) pid.textContent = data.pid ?? "—";
+    const bs = $("#btnStart");
+    const bt = $("#btnStop");
+    if (bs) bs.disabled = isRunning;
+    if (bt) bt.disabled = !isRunning;
     renderDeps(data.deps);
     updateHeroHint();
   } catch (e) {
@@ -109,15 +201,19 @@ async function loadConfig() {
     const sid = cfg.script_ids
       ? (Array.isArray(cfg.script_ids) ? cfg.script_ids.join(", ") : cfg.script_ids)
       : cfg.script_id || "";
-    $("#auth_key").value = cfg.auth_key || "";
-    $("#script_id").value = sid;
-    $("#listen_host").value = cfg.listen_host || "127.0.0.1";
-    $("#listen_port").value = cfg.listen_port ?? 8085;
-    $("#socks5_enabled").checked = cfg.socks5_enabled !== false;
-    $("#socks5_port").value = cfg.socks5_port ?? 1080;
-    $("#lan_sharing").checked = !!cfg.lan_sharing;
-    $("#front_domain").value = cfg.front_domain || "www.google.com";
-    $("#log_level").value = cfg.log_level || "INFO";
+    if ($("#auth_key")) $("#auth_key").value = cfg.auth_key || "";
+    if ($("#script_id")) $("#script_id").value = sid;
+    if ($("#listen_host")) $("#listen_host").value = cfg.listen_host || "127.0.0.1";
+    if ($("#listen_port")) $("#listen_port").value = cfg.listen_port ?? 8085;
+    if ($("#socks5_enabled")) $("#socks5_enabled").checked = cfg.socks5_enabled !== false;
+    if ($("#socks5_port")) $("#socks5_port").value = cfg.socks5_port ?? 1080;
+    // Default LAN sharing ON when key missing
+    if ($("#lan_sharing")) {
+      $("#lan_sharing").checked =
+        cfg.lan_sharing === undefined ? true : !!cfg.lan_sharing;
+    }
+    if ($("#front_domain")) $("#front_domain").value = cfg.front_domain || "www.google.com";
+    if ($("#log_level")) $("#log_level").value = cfg.log_level || "INFO";
   } catch (e) {
     console.error(e);
   }
@@ -126,15 +222,15 @@ async function loadConfig() {
 async function saveConfig(e) {
   if (e && e.preventDefault) e.preventDefault();
   const payload = {
-    auth_key: $("#auth_key").value.trim(),
-    script_id: $("#script_id").value.trim(),
-    listen_host: $("#listen_host").value.trim() || "127.0.0.1",
-    listen_port: parseInt($("#listen_port").value, 10) || 8085,
-    socks5_enabled: $("#socks5_enabled").checked,
-    socks5_port: parseInt($("#socks5_port").value, 10) || 1080,
-    lan_sharing: $("#lan_sharing").checked,
-    front_domain: $("#front_domain").value.trim() || "www.google.com",
-    log_level: $("#log_level").value || "INFO",
+    auth_key: ($("#auth_key") && $("#auth_key").value.trim()) || "",
+    script_id: ($("#script_id") && $("#script_id").value.trim()) || "",
+    listen_host: ($("#listen_host") && $("#listen_host").value.trim()) || "127.0.0.1",
+    listen_port: parseInt($("#listen_port") && $("#listen_port").value, 10) || 8085,
+    socks5_enabled: $("#socks5_enabled") ? $("#socks5_enabled").checked : true,
+    socks5_port: parseInt($("#socks5_port") && $("#socks5_port").value, 10) || 1080,
+    lan_sharing: $("#lan_sharing") ? $("#lan_sharing").checked : true,
+    front_domain: ($("#front_domain") && $("#front_domain").value.trim()) || "www.google.com",
+    log_level: ($("#log_level") && $("#log_level").value) || "INFO",
     mode: "apps_script",
   };
   try {
@@ -148,7 +244,7 @@ async function saveConfig(e) {
       configReady = !!data.config_ready;
       toast(t("toast.saved"), "success");
       updateHeroHint();
-      refreshProxyConfigs();
+      await refreshProxyConfigs();
       if (configReady) {
         setCollapsed("#settingsToggle", "#settingsBody", true);
       }
@@ -162,7 +258,7 @@ async function saveConfig(e) {
 
 async function startProxy() {
   try {
-    if ($("#auth_key").value.trim() && $("#script_id").value.trim()) {
+    if ($("#auth_key") && $("#auth_key").value.trim() && $("#script_id") && $("#script_id").value.trim()) {
       await saveConfig({ preventDefault() {} });
     }
     const r = await fetch("/api/start", { method: "POST" });
@@ -202,7 +298,7 @@ async function installDeps() {
     await fetch("/api/install-deps", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ use_mirror: $("#useMirror").checked }),
+      body: JSON.stringify({ use_mirror: $("#useMirror") && $("#useMirror").checked }),
     });
   } catch (err) {
     toast(String(err), "error");
@@ -233,7 +329,8 @@ function connectSocket() {
   });
   socket.on("stats", (data) => {
     if (data) {
-      $("#reqCount").textContent = data.requests ?? 0;
+      const rc = $("#reqCount");
+      if (rc) rc.textContent = data.requests ?? 0;
     }
   });
   socket.on("deps_done", (data) => {
@@ -261,22 +358,26 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireCollapsible("#settingsToggle", "#settingsBody");
   wireCollapsible("#depsToggle", "#depsBody");
 
-  $("#configForm").addEventListener("submit", saveConfig);
-  $("#btnStart").addEventListener("click", startProxy);
-  $("#btnStop").addEventListener("click", stopProxy);
-  $("#btnInstall").addEventListener("click", installDeps);
-  $("#btnRefreshDeps").addEventListener("click", refreshStatus);
-  $("#btnScan").addEventListener("click", runScan);
-  $("#btnClearLogs").addEventListener("click", clearLogs);
-  const btnRc = $("#btnRefreshConfigs");
-  if (btnRc) btnRc.addEventListener("click", refreshProxyConfigs);
+  const form = $("#configForm");
+  if (form) form.addEventListener("submit", saveConfig);
+  if ($("#btnStart")) $("#btnStart").addEventListener("click", startProxy);
+  if ($("#btnStop")) $("#btnStop").addEventListener("click", stopProxy);
+  if ($("#btnInstall")) $("#btnInstall").addEventListener("click", installDeps);
+  if ($("#btnRefreshDeps")) $("#btnRefreshDeps").addEventListener("click", refreshStatus);
+  if ($("#btnScan")) $("#btnScan").addEventListener("click", runScan);
+  if ($("#btnClearLogs")) $("#btnClearLogs").addEventListener("click", clearLogs);
+  if ($("#btnCopyLogs")) {
+    $("#btnCopyLogs").addEventListener("click", () => {
+      navigator.clipboard.writeText(logView.innerText).then(() => {
+        toast(t("toast.copied"), "success");
+      });
+    });
+  }
+  if ($("#btnRefreshConfigs")) {
+    $("#btnRefreshConfigs").addEventListener("click", refreshProxyConfigs);
+  }
   document.querySelectorAll("[data-copy]").forEach((btn) => {
     btn.addEventListener("click", () => copyConfig(btn.getAttribute("data-copy")));
-  });
-  $("#btnCopyLogs").addEventListener("click", () => {
-    navigator.clipboard.writeText(logView.innerText).then(() => {
-      toast(t("toast.copied"), "success");
-    });
   });
 
   await loadConfig();
