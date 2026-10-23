@@ -5,8 +5,8 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 let socket = null;
 let isRunning = false;
+let configReady = false;
 
-// ── Theme ──────────────────────────────────────────────────────────────────
 function setTheme(name) {
   document.documentElement.setAttribute("data-theme", name);
   localStorage.setItem("mhr_theme", name);
@@ -15,7 +15,6 @@ function setTheme(name) {
   });
 }
 
-// ── Toast ──────────────────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg, type = "") {
   const el = $("#toast");
@@ -28,7 +27,25 @@ function toast(msg, type = "") {
   }, 2800);
 }
 
-// ── Logs ───────────────────────────────────────────────────────────────────
+function setCollapsed(toggleSel, bodySel, collapsed) {
+  const toggle = $(toggleSel);
+  const body = $(bodySel);
+  if (!toggle || !body) return;
+  body.hidden = collapsed;
+  toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  const chevron = toggle.querySelector(".chevron");
+  if (chevron) chevron.textContent = collapsed ? "▼" : "▲";
+}
+
+function wireCollapsible(toggleSel, bodySel) {
+  const toggle = $(toggleSel);
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") === "true";
+    setCollapsed(toggleSel, bodySel, open);
+  });
+}
+
 const logView = $("#logView");
 
 function appendLogLine(line) {
@@ -50,7 +67,6 @@ function clearLogs() {
   logView.innerHTML = "";
 }
 
-// ── Dependencies ───────────────────────────────────────────────────────────
 function renderDeps(deps) {
   const list = $("#depList");
   list.innerHTML = "";
@@ -61,24 +77,31 @@ function renderDeps(deps) {
   });
 }
 
+function updateHeroHint() {
+  const hint = $("#heroHint");
+  if (!hint) return;
+  hint.textContent = configReady ? t("hero.hint_ready") : t("hero.hint_setup");
+}
+
 async function refreshStatus() {
   try {
     const r = await fetch("/api/status");
     const data = await r.json();
     isRunning = !!data.running;
-    $("#statusDot").className = "dot " + (isRunning ? "running" : "stopped");
+    configReady = !!data.config_ready;
+    $("#statusDot").className = "dot big " + (isRunning ? "running" : "stopped");
     $("#statusText").textContent = isRunning ? t("status.running") : t("status.stopped");
     $("#reqCount").textContent = data.requests ?? 0;
     $("#pidVal").textContent = data.pid ?? "—";
     $("#btnStart").disabled = isRunning;
     $("#btnStop").disabled = !isRunning;
     renderDeps(data.deps);
+    updateHeroHint();
   } catch (e) {
     console.error(e);
   }
 }
 
-// ── Config ─────────────────────────────────────────────────────────────────
 async function loadConfig() {
   try {
     const r = await fetch("/api/config");
@@ -101,7 +124,7 @@ async function loadConfig() {
 }
 
 async function saveConfig(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   const payload = {
     auth_key: $("#auth_key").value.trim(),
     script_id: $("#script_id").value.trim(),
@@ -122,7 +145,12 @@ async function saveConfig(e) {
     });
     const data = await r.json();
     if (data.ok) {
+      configReady = !!data.config_ready;
       toast(t("toast.saved"), "success");
+      updateHeroHint();
+      if (configReady) {
+        setCollapsed("#settingsToggle", "#settingsBody", true);
+      }
     } else {
       toast(data.error || t("toast.error"), "error");
     }
@@ -131,11 +159,11 @@ async function saveConfig(e) {
   }
 }
 
-// ── Proxy control ──────────────────────────────────────────────────────────
 async function startProxy() {
   try {
-    // Auto-save first
-    await saveConfig({ preventDefault() {} });
+    if ($("#auth_key").value.trim() && $("#script_id").value.trim()) {
+      await saveConfig({ preventDefault() {} });
+    }
     const r = await fetch("/api/start", { method: "POST" });
     const data = await r.json();
     if (data.ok) {
@@ -143,6 +171,9 @@ async function startProxy() {
       refreshStatus();
     } else {
       toast(data.error || t("toast.error"), "error");
+      if (!configReady) {
+        setCollapsed("#settingsToggle", "#settingsBody", false);
+      }
     }
   } catch (err) {
     toast(String(err), "error");
@@ -185,7 +216,6 @@ async function runScan() {
   }
 }
 
-// ── Socket ─────────────────────────────────────────────────────────────────
 function connectSocket() {
   socket = io({ transports: ["websocket", "polling"] });
   socket.on("connect", () => {
@@ -212,22 +242,24 @@ function connectSocket() {
   });
 }
 
-// ── Init ───────────────────────────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", () => {
-  // Theme
+document.addEventListener("DOMContentLoaded", async () => {
   const savedTheme = localStorage.getItem("mhr_theme") || "dark";
   setTheme(savedTheme);
   $$("[data-theme-btn]").forEach((btn) => {
     btn.addEventListener("click", () => setTheme(btn.getAttribute("data-theme-btn")));
   });
 
-  // Language
   applyI18n();
   $$("[data-lang]").forEach((btn) => {
-    btn.addEventListener("click", () => setLang(btn.getAttribute("data-lang")));
+    btn.addEventListener("click", () => {
+      setLang(btn.getAttribute("data-lang"));
+      updateHeroHint();
+    });
   });
 
-  // Forms & buttons
+  wireCollapsible("#settingsToggle", "#settingsBody");
+  wireCollapsible("#depsToggle", "#depsBody");
+
   $("#configForm").addEventListener("submit", saveConfig);
   $("#btnStart").addEventListener("click", startProxy);
   $("#btnStop").addEventListener("click", stopProxy);
@@ -241,8 +273,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  loadConfig();
-  refreshStatus();
+  await loadConfig();
+  await refreshStatus();
+
+  if (configReady) {
+    setCollapsed("#settingsToggle", "#settingsBody", true);
+    setCollapsed("#depsToggle", "#depsBody", true);
+  } else {
+    setCollapsed("#settingsToggle", "#settingsBody", false);
+    setCollapsed("#depsToggle", "#depsBody", true);
+  }
+
   connectSocket();
   setInterval(refreshStatus, 4000);
 });

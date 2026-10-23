@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="fa" dir="rtl" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -17,7 +17,7 @@
         <div class="logo">⚡</div>
         <div>
           <h1>MHR-CFW <span class="badge">Web UI</span></h1>
-          <p class="subtitle" data-i18n="subtitle">Local control panel for the domain-fronting relay</p>
+          <p class="subtitle" data-i18n="subtitle">پنل کنترل محلی رله Domain-Fronting</p>
         </div>
       </div>
       <div class="header-actions">
@@ -33,71 +33,57 @@
       </div>
     </header>
 
-    <!-- Status bar -->
-    <section class="status-bar">
-      <div class="status-item">
-        <span class="dot" id="statusDot"></span>
-        <span id="statusText" data-i18n="status.stopped">Stopped</span>
+    <!-- Big control panel (main focus) -->
+    <section class="hero-control">
+      <div class="hero-status">
+        <span class="dot big" id="statusDot"></span>
+        <div>
+          <div class="hero-label" id="statusText" data-i18n="status.stopped">متوقف</div>
+          <div class="hero-meta">
+            <span data-i18n="stats.requests">درخواست‌ها</span>: <strong id="reqCount">0</strong>
+            · PID: <strong id="pidVal">—</strong>
+          </div>
+        </div>
       </div>
-      <div class="status-item">
-        <span class="label" data-i18n="stats.requests">Requests</span>
-        <strong id="reqCount">0</strong>
+      <div class="hero-buttons">
+        <button class="btn btn-hero btn-primary" id="btnStart" data-i18n="btn.start">شروع پروکسی</button>
+        <button class="btn btn-hero btn-danger" id="btnStop" data-i18n="btn.stop" disabled>توقف</button>
       </div>
-      <div class="status-item">
-        <span class="label">PID</span>
-        <strong id="pidVal">—</strong>
-      </div>
-      <div class="status-actions">
-        <button class="btn btn-primary" id="btnStart" data-i18n="btn.start">Start Proxy</button>
-        <button class="btn btn-danger" id="btnStop" data-i18n="btn.stop" disabled>Stop</button>
-      </div>
+      <p class="hero-hint" id="heroHint" data-i18n="hero.hint_ready">
+        تنظیمات ذخیره شده‌اند. فقط پروکسی را روشن یا خاموش کنید.
+      </p>
     </section>
 
     <main class="main">
-      <!-- Left column: Config + Deps -->
       <div class="col">
-        <!-- Dependencies card -->
-        <div class="card">
-          <div class="card-header">
-            <h2 data-i18n="deps.title">Dependencies</h2>
-            <button class="btn btn-sm" id="btnRefreshDeps" data-i18n="btn.refresh">Refresh</button>
-          </div>
-          <div class="card-body">
-            <ul class="dep-list" id="depList"></ul>
-            <div class="dep-actions">
-              <label class="checkbox">
-                <input type="checkbox" id="useMirror" />
-                <span data-i18n="deps.mirror">Use PyPI mirror (Iran)</span>
-              </label>
-              <button class="btn btn-secondary" id="btnInstall" data-i18n="btn.install">Install / Update packages</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Config card -->
-        <div class="card">
-          <div class="card-header">
-            <h2 data-i18n="config.title">Configuration</h2>
-          </div>
-          <div class="card-body">
+        <!-- Collapsible settings -->
+        <div class="card collapsible" id="settingsCard">
+          <button type="button" class="card-header collapsible-toggle" id="settingsToggle" aria-expanded="false">
+            <h2 data-i18n="config.title">پیکربندی</h2>
+            <span class="chevron">▼</span>
+          </button>
+          <div class="card-body collapsible-body" id="settingsBody" hidden>
+            <p class="hint-text" data-i18n="config.persist_hint">
+              یک‌بار تنظیم کنید؛ دفعه بعد همان مقادیر لود می‌شوند و نیازی به ورود مجدد نیست.
+            </p>
             <form id="configForm">
               <div class="field">
-                <label data-i18n="config.auth_key">Auth Key (AUTH_KEY)</label>
+                <label data-i18n="config.auth_key">کلید احراز هویت (AUTH_KEY)</label>
                 <input type="text" name="auth_key" id="auth_key" placeholder="your-secret-password" autocomplete="off" required />
-                <small data-i18n="config.auth_key_hint">Must match AUTH_KEY in Code.gs</small>
+                <small data-i18n="config.auth_key_hint">باید با AUTH_KEY داخل Code.gs یکی باشد</small>
               </div>
               <div class="field">
-                <label data-i18n="config.script_id">Deployment ID(s)</label>
+                <label data-i18n="config.script_id">آیدی دیپلویمنت (Deployment ID)</label>
                 <input type="text" name="script_id" id="script_id" placeholder="AKfycb…" autocomplete="off" required />
-                <small data-i18n="config.script_id_hint">Comma-separated for multiple scripts</small>
+                <small data-i18n="config.script_id_hint">برای چند اسکریپت با کاما جدا کنید</small>
               </div>
               <div class="grid-2">
                 <div class="field">
-                  <label data-i18n="config.listen_host">Listen Host</label>
+                  <label data-i18n="config.listen_host">آدرس گوش دادن</label>
                   <input type="text" name="listen_host" id="listen_host" value="127.0.0.1" />
                 </div>
                 <div class="field">
-                  <label data-i18n="config.listen_port">HTTP Port</label>
+                  <label data-i18n="config.listen_port">پورت HTTP</label>
                   <input type="number" name="listen_port" id="listen_port" value="8085" min="1" max="65535" />
                 </div>
               </div>
@@ -105,27 +91,27 @@
                 <div class="field">
                   <label class="checkbox">
                     <input type="checkbox" name="socks5_enabled" id="socks5_enabled" checked />
-                    <span data-i18n="config.socks5">Enable SOCKS5</span>
+                    <span data-i18n="config.socks5">فعال‌سازی SOCKS5</span>
                   </label>
                 </div>
                 <div class="field">
-                  <label data-i18n="config.socks5_port">SOCKS5 Port</label>
+                  <label data-i18n="config.socks5_port">پورت SOCKS5</label>
                   <input type="number" name="socks5_port" id="socks5_port" value="1080" min="1" max="65535" />
                 </div>
               </div>
               <div class="field">
                 <label class="checkbox">
                   <input type="checkbox" name="lan_sharing" id="lan_sharing" />
-                  <span data-i18n="config.lan_sharing">LAN Sharing (bind 0.0.0.0)</span>
+                  <span data-i18n="config.lan_sharing">اشتراک‌گذاری در شبکه محلی (0.0.0.0)</span>
                 </label>
               </div>
               <div class="grid-2">
                 <div class="field">
-                  <label data-i18n="config.front_domain">Front Domain</label>
+                  <label data-i18n="config.front_domain">دامنه فرانت</label>
                   <input type="text" name="front_domain" id="front_domain" value="www.google.com" />
                 </div>
                 <div class="field">
-                  <label data-i18n="config.log_level">Log Level</label>
+                  <label data-i18n="config.log_level">سطح لاگ</label>
                   <select name="log_level" id="log_level">
                     <option value="DEBUG">DEBUG</option>
                     <option value="INFO" selected>INFO</option>
@@ -135,22 +121,41 @@
                 </div>
               </div>
               <div class="form-actions">
-                <button type="submit" class="btn btn-primary" data-i18n="btn.save">Save Config</button>
-                <button type="button" class="btn btn-secondary" id="btnScan" data-i18n="btn.scan">Scan Google IPs</button>
+                <button type="submit" class="btn btn-primary" data-i18n="btn.save">ذخیره تنظیمات</button>
+                <button type="button" class="btn btn-secondary" id="btnScan" data-i18n="btn.scan">اسکن آی‌پی گوگل</button>
               </div>
             </form>
           </div>
         </div>
+
+        <!-- Dependencies (also collapsible) -->
+        <div class="card collapsible" id="depsCard">
+          <button type="button" class="card-header collapsible-toggle" id="depsToggle" aria-expanded="false">
+            <h2 data-i18n="deps.title">وابستگی‌ها</h2>
+            <span class="chevron">▼</span>
+          </button>
+          <div class="card-body collapsible-body" id="depsBody" hidden>
+            <ul class="dep-list" id="depList"></ul>
+            <div class="dep-actions">
+              <label class="checkbox">
+                <input type="checkbox" id="useMirror" />
+                <span data-i18n="deps.mirror">استفاده از میرور PyPI (ایران)</span>
+              </label>
+              <button class="btn btn-secondary" id="btnInstall" data-i18n="btn.install">نصب / بروزرسانی پکیج‌ها</button>
+            </div>
+            <button class="btn btn-sm" id="btnRefreshDeps" style="margin-top:0.75rem" data-i18n="btn.refresh">بروزرسانی</button>
+          </div>
+        </div>
       </div>
 
-      <!-- Right column: Logs -->
+      <!-- Logs -->
       <div class="col col-wide">
         <div class="card log-card">
           <div class="card-header">
-            <h2 data-i18n="logs.title">Live Logs</h2>
+            <h2 data-i18n="logs.title">لاگ زنده</h2>
             <div class="log-actions">
-              <button class="btn btn-sm" id="btnClearLogs" data-i18n="btn.clear">Clear</button>
-              <button class="btn btn-sm" id="btnCopyLogs" data-i18n="btn.copy">Copy</button>
+              <button class="btn btn-sm" id="btnClearLogs" data-i18n="btn.clear">پاک کردن</button>
+              <button class="btn btn-sm" id="btnCopyLogs" data-i18n="btn.copy">کپی</button>
             </div>
           </div>
           <div class="card-body log-body">
@@ -162,9 +167,9 @@
 
     <footer class="footer">
       <p data-i18n="footer">
-        This Web UI is an unofficial helper for the original project
-        <a href="https://github.com/denuitt1/mhr-cfw" target="_blank" rel="noopener">mhr-cfw by denuitt1</a>.
-        We only built a graphical interface to make setup and usage easier for users.
+        این رابط وب یک ابزار غیررسمی کمکی برای پروژه اصلی
+        <a href="https://github.com/denuitt1/mhr-cfw" target="_blank" rel="noopener">mhr-cfw متعلق به denuitt1</a>
+        است. ما صرفاً برای راحت‌تر شدن کار کاربران یک رابط گرافیکی ساخته‌ایم.
       </p>
     </footer>
   </div>

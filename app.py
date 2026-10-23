@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
@@ -38,7 +39,6 @@ bytes_down = 0
 _lock = threading.Lock()
 MAX_LOG_LINES = 2000
 
-# Patterns that look like a real HTTP request being relayed
 REQUEST_PATTERNS = [
     re.compile(r"\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\S+", re.I),
     re.compile(r"relay|forward|proxy.*(req|request|conn)", re.I),
@@ -82,7 +82,6 @@ def _reader(pipe, prefix: str = "") -> None:
 
 
 def check_package(pkg: str) -> bool:
-    """Return True if the given import name / package is available."""
     try:
         __import__(pkg)
         return True
@@ -91,7 +90,6 @@ def check_package(pkg: str) -> bool:
 
 
 def get_deps_status() -> dict:
-    """Check core dependencies of both the original project and the Web UI."""
     checks = {
         "cryptography": check_package("cryptography"),
         "h2": check_package("h2"),
@@ -100,7 +98,6 @@ def get_deps_status() -> dict:
         "flask": check_package("flask"),
         "flask_socketio": check_package("flask_socketio"),
     }
-    # certifi is optional on Windows
     if sys.platform != "win32":
         checks["certifi"] = check_package("certifi")
     return checks
@@ -131,8 +128,25 @@ def load_config() -> dict:
     }
 
 
+def is_config_ready(cfg: dict | None = None) -> bool:
+    """True when auth_key and script_id look valid (user already set them up)."""
+    if cfg is None:
+        cfg = load_config()
+    key = (cfg.get("auth_key") or "").strip()
+    sid = cfg.get("script_id") or cfg.get("script_ids")
+    if isinstance(sid, list):
+        sid = sid[0] if sid else ""
+    sid = (sid or "").strip()
+    placeholders = {
+        "",
+        "CHANGE_ME_TO_A_STRONG_SECRET",
+        "your-secret-password-here",
+        "YOUR_APPS_SCRIPT_DEPLOYMENT_ID",
+    }
+    return key not in placeholders and sid not in placeholders and bool(sid)
+
+
 def save_config(data: dict) -> None:
-    # Normalize script_id / script_ids
     sid = data.get("script_id") or data.get("script_ids")
     if isinstance(sid, str) and "," in sid:
         ids = [x.strip() for x in sid.split(",") if x.strip()]
@@ -157,6 +171,7 @@ def index():
 @app.route("/api/status")
 def api_status():
     running = proxy_process is not None and proxy_process.poll() is None
+    cfg = load_config()
     return jsonify(
         {
             "running": running,
@@ -164,6 +179,7 @@ def api_status():
             "requests": request_count,
             "deps": get_deps_status(),
             "config_exists": CONFIG_PATH.exists(),
+            "config_ready": is_config_ready(cfg),
         }
     )
 
@@ -173,10 +189,8 @@ def api_config():
     if request.method == "GET":
         return jsonify(load_config())
     data = request.get_json(force=True, silent=True) or {}
-    # Keep unknown keys from existing config
     cfg = load_config()
     cfg.update(data)
-    # Required sanitization
     cfg["mode"] = "apps_script"
     if "listen_port" in cfg:
         try:
@@ -192,12 +206,11 @@ def api_config():
         if bkey in cfg:
             cfg[bkey] = bool(cfg[bkey])
     save_config(cfg)
-    return jsonify({"ok": True, "config": cfg})
+    return jsonify({"ok": True, "config": cfg, "config_ready": is_config_ready(cfg)})
 
 
 @app.route("/api/install-deps", methods=["POST"])
 def api_install_deps():
-    """Install missing packages with pip (runs in background, streams log)."""
     body = request.get_json(force=True, silent=True) or {}
     use_mirror = bool(body.get("use_mirror", False))
 
@@ -210,7 +223,6 @@ def api_install_deps():
                 "--trusted-host",
                 "mirror-pypi.runflare.com",
             ]
-        # Also ensure webui deps
         cmd2 = [sys.executable, "-m", "pip", "install", "-r", str(WEBUI_REQ)]
         for c in (cmd, cmd2):
             _append_log(f"$ {' '.join(c)}")
@@ -245,16 +257,13 @@ def api_start():
         return jsonify({"ok": False, "error": "config.json missing — save config first"}), 400
 
     cfg = load_config()
-    if not cfg.get("auth_key") or cfg.get("auth_key") in (
-        "",
-        "CHANGE_ME_TO_A_STRONG_SECRET",
-        "your-secret-password-here",
-    ):
-        return jsonify({"ok": False, "error": "auth_key is missing or still a placeholder"}), 400
-
-    sid = cfg.get("script_id") or cfg.get("script_ids")
-    if not sid or sid == "YOUR_APPS_SCRIPT_DEPLOYMENT_ID":
-        return jsonify({"ok": False, "error": "script_id / Deployment ID is missing"}), 400
+    if not is_config_ready(cfg):
+        return jsonify(
+            {
+                "ok": False,
+                "error": "auth_key یا Deployment ID تنظیم نشده — اول تنظیمات را ذخیره کنید",
+            }
+        ), 400
 
     with _lock:
         request_count = 0
@@ -310,7 +319,6 @@ def api_logs():
 
 @app.route("/api/scan", methods=["POST"])
 def api_scan():
-    """Run Google IP scanner once."""
     def _run():
         _append_log("[webui] Starting Google IP scan…")
         try:
@@ -343,10 +351,21 @@ def on_connect():
         )
 
 
+def _open_browser():
+    time.sleep(1.2)
+    try:
+        webbrowser.open("http://127.0.0.1:5050")
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     print()
     print("  MHR-CFW Web UI")
     print("  Open → http://127.0.0.1:5050")
     print("  (This UI is a helper for the original project by denuitt1)")
     print()
+    # Auto-open browser (skip if already configured via env)
+    if os.environ.get("MHR_NO_BROWSER") != "1":
+        threading.Thread(target=_open_browser, daemon=True).start()
     socketio.run(app, host="127.0.0.1", port=5050, debug=False, allow_unsafe_werkzeug=True)

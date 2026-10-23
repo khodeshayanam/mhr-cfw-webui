@@ -491,3 +491,99 @@ a:hover { text-decoration: underline; }
   from { opacity: 0; transform: translateX(-50%) translateY(8px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+/* ─── Hero control panel ────────────────────────────────────────────────── */
+.hero-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem 1.75rem;
+  padding: 1.35rem 1.5rem;
+  margin-bottom: 1.25rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.hero-status {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex: 1;
+  min-width: 180px;
+}
+
+.dot.big {
+  width: 16px;
+  height: 16px;
+}
+
+.hero-label {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.hero-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.btn-hero {
+  padding: 0.75rem 1.6rem;
+  font-size: 1rem;
+  min-width: 140px;
+}
+
+.hero-hint {
+  width: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* ─── Collapsible cards ─────────────────────────────────────────────────── */
+.collapsible-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  background: var(--bg-elevated);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 0.85rem 1.15rem;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+}
+
+.collapsible-toggle h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.collapsible-toggle .chevron {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  transition: transform 0.15s;
+}
+
+.collapsible-body {
+  padding: 1.15rem;
+}
+
+.hint-text {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}

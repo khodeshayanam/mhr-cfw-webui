@@ -26,7 +26,10 @@ const I18N = {
     "config.lan_sharing": "LAN Sharing (bind 0.0.0.0)",
     "config.front_domain": "Front Domain",
     "config.log_level": "Log Level",
+    "config.persist_hint": "Set once — next time values are loaded automatically. No need to re-enter.",
     "logs.title": "Live Logs",
+    "hero.hint_ready": "Settings are saved. Just turn the proxy on or off.",
+    "hero.hint_setup": "First time: open Configuration, enter Auth Key & Deployment ID, then Save.",
     footer:
       'This Web UI is an unofficial helper for the original project <a href="https://github.com/denuitt1/mhr-cfw" target="_blank" rel="noopener">mhr-cfw by denuitt1</a>. We only built a graphical interface to make setup and usage easier for users.',
     "toast.saved": "Config saved",
@@ -37,7 +40,7 @@ const I18N = {
     "toast.error": "Error",
   },
   fa: {
-    subtitle: "پنل کنترل محلی برای رلهٔ Domain-Fronting",
+    subtitle: "پنل کنترل محلی رله Domain-Fronting",
     "status.stopped": "متوقف",
     "status.running": "در حال اجرا",
     "stats.requests": "درخواست‌ها",
@@ -63,7 +66,10 @@ const I18N = {
     "config.lan_sharing": "اشتراک‌گذاری در شبکه محلی (0.0.0.0)",
     "config.front_domain": "دامنه فرانت",
     "config.log_level": "سطح لاگ",
+    "config.persist_hint": "یک‌بار تنظیم کنید؛ دفعه بعد همان مقادیر لود می‌شوند و نیازی به ورود مجدد نیست.",
     "logs.title": "لاگ زنده",
+    "hero.hint_ready": "تنظیمات ذخیره شده‌اند. فقط پروکسی را روشن یا خاموش کنید.",
+    "hero.hint_setup": "بار اول: بخش پیکربندی را باز کنید، Auth Key و Deployment ID را وارد و ذخیره کنید.",
     footer:
       'این رابط وب یک ابزار غیررسمی کمکی برای پروژه اصلی <a href="https://github.com/denuitt1/mhr-cfw" target="_blank" rel="noopener">mhr-cfw متعلق به denuitt1</a> است. ما صرفاً برای راحت‌تر شدن کار کاربران یک رابط گرافیکی ساخته‌ایم.',
     "toast.saved": "تنظیمات ذخیره شد",
@@ -75,7 +81,7 @@ const I18N = {
   },
 };
 
-let currentLang = localStorage.getItem("mhr_lang") || "en";
+let currentLang = localStorage.getItem("mhr_lang") || "fa";
 
 function t(key) {
   return (I18N[currentLang] && I18N[currentLang][key]) || I18N.en[key] || key;

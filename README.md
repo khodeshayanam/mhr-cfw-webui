@@ -1,138 +1,141 @@
 # MHR-CFW Web UI
 
-A beautiful **local Web UI** for the [mhr-cfw](https://github.com/denuitt1/mhr-cfw) project.
+رابط گرافیکی **محلی** برای پروژه [mhr-cfw](https://github.com/denuitt1/mhr-cfw)
 
-> **Important notice**  
-> This project is an **unofficial helper UI** for the original work by **denuitt1**.  
-> We did **not** create the domain-fronting relay itself.  
-> We only built a graphical interface so users can configure and run the original project more easily (especially those who prefer not to use the terminal wizard).
-
----
-
-## Features
-
-- **Dark / Light / Neon** themes
-- **English & Persian (فارسی)** with full RTL support
-- Dependency checker + one-click `pip install`
-- Graphical form for:
-  - `auth_key` (AUTH_KEY)
-  - Google Apps Script **Deployment ID(s)**
-  - Listen host / ports
-  - SOCKS5, LAN sharing, log level, front domain
-- Start / Stop the local proxy from the browser
-- **Live logs** (WebSocket)
-- Approximate **request counter** (based on log patterns)
-- Optional Google IP scanner button
+> **توجه مهم**  
+> این پروژه یک **ابزار غیررسمی کمکی** برای کار اصلی **denuitt1** است.  
+> ما رله و منطق Domain-Fronting را نساخته‌ایم.  
+> فقط یک رابط گرافیکی ساخته‌ایم تا راه‌اندازی و استفاده برای کاربران ساده‌تر شود.
 
 ---
 
-## Requirements
+## قابلیت‌ها
 
-- Python **3.10+**
-- The original mhr-cfw core files (already included in this repository: `main.py`, `src/`, `config.example.json`, …)
+- تم‌های **تیره / روشن / نئون**
+- زبان **فارسی و انگلیسی** (با پشتیبانی کامل RTL)
+- بررسی وابستگی‌ها + نصب با یک کلیک
+- فرم تنظیمات (Auth Key، Deployment ID، پورت‌ها و …)
+- **ذخیره دائمی تنظیمات** — یک‌بار وارد کنید؛ دفعه بعد فقط روشن/خاموش
+- دکمه‌های بزرگ Start / Stop در بالای صفحه
+- باز شدن خودکار مرورگر با اجرای برنامه
+- لاگ زنده + شمارنده تقریبی درخواست‌ها
 
 ---
 
-## Quick Start
+## پیش‌نیاز
 
-```bash
-# 1. Clone this repo
-git clone https://github.com/YOUR_USERNAME/mhr-cfw-webui.git
-cd mhr-cfw-webui
+- Python **3.10** یا بالاتر
 
-# 2. Install Web UI dependencies
-pip install -r requirements-webui.txt
+---
 
-# If PyPI is blocked:
-pip install -r requirements-webui.txt -i https://mirror-pypi.runflare.com/simple/ --trusted-host mirror-pypi.runflare.com
+## نصب و اجرا (ویندوز)
 
-# 3. Run the Web UI
+```powershell
+cd مسیر\پوشه\mhr-cfw-webui
+
+python -m pip install -r requirements-webui.txt
+
+# اگر PyPI محدود بود:
+python -m pip install -r requirements-webui.txt -i https://mirror-pypi.runflare.com/simple/ --trusted-host mirror-pypi.runflare.com
+
 python app.py
 ```
 
-Open your browser:
+یا دوبار کلیک روی:
+
+```
+run_webui.bat
+```
+
+مرورگر به‌صورت خودکار باز می‌شود:
 
 ```
 http://127.0.0.1:5050
 ```
 
-### First-time setup inside the UI
+---
 
-1. Check the **Dependencies** card. If anything is missing, click **Install / Update packages**.
-2. Fill in:
-   - **Auth Key** → same value you put in `Code.gs` as `AUTH_KEY`
-   - **Deployment ID** → the long ID from Google Apps Script deployment
-3. Click **Save Config**.
-4. Click **Start Proxy**.
+## استفاده روزمره (بعد از تنظیم اول)
 
-The HTTP proxy will listen on the port you configured (default `8085`).  
-SOCKS5 is also available if enabled (default `1080`).
+1. فقط `python app.py` یا `run_webui.bat` را اجرا کنید.
+2. مرورگر باز می‌شود.
+3. دکمه **شروع پروکسی** یا **توقف** را بزنید.
+
+نیازی به وارد کردن دوباره Auth Key و Deployment ID نیست؛ از فایل `config.json` خوانده می‌شوند.
+
+### بار اول
+
+1. بخش **پیکربندی** را باز کنید.
+2. Auth Key و Deployment ID را وارد کنید.
+3. **ذخیره تنظیمات** را بزنید.
+4. **شروع پروکسی** را بزنید.
 
 ---
 
-## Relation to the original project
+## پورت‌های پیش‌فرض
 
-| Item | Owner / Source |
-|------|----------------|
-| Domain-fronting relay, GAS + Cloudflare Worker code, MITM proxy logic | **denuitt1** — [mhr-cfw](https://github.com/denuitt1/mhr-cfw) |
-| This Web UI (Flask panel, themes, i18n, start/stop, logs) | This repository only |
+| سرویس | آدرس |
+|--------|------|
+| HTTP Proxy | `127.0.0.1:8085` |
+| SOCKS5 | `127.0.0.1:1080` |
 
-Please star and support the original project:
+---
+
+## ارتباط با پروژه اصلی
+
+| مورد | مالک |
+|------|------|
+| رله، GAS، Cloudflare Worker، منطق MITM | **denuitt1** — [mhr-cfw](https://github.com/denuitt1/mhr-cfw) |
+| این Web UI (رابط، تم، زبان، Start/Stop) | همین مخزن |
+
+لطفاً پروژه اصلی را ستاره بزنید و حمایت کنید:
 
 https://github.com/denuitt1/mhr-cfw
 
 ---
 
-## Project structure
+## ساختار پوشه
 
 ```
 mhr-cfw-webui/
-├── app.py                 # Flask + SocketIO Web UI server
-├── main.py                # Original entry point (from mhr-cfw)
-├── setup.py               # Original CLI wizard
+├── app.py                 # سرور Flask + SocketIO
+├── main.py                # ورودی اصلی پروژه اصلی
+├── setup.py               # ویزارد خط فرمان اصلی
 ├── config.example.json
-├── requirements.txt       # Original deps
-├── requirements-webui.txt # Web UI deps
-├── src/                   # Original proxy source
+├── config.json            # بعد از ذخیره تنظیمات ساخته می‌شود (در گیت نیست)
+├── requirements.txt
+├── requirements-webui.txt
+├── run_webui.bat / .sh
+├── src/                   # سورس پروکسی اصلی
 ├── templates/
-│   └── index.html
 ├── static/
-│   ├── css/style.css
-│   └── js/{app.js,i18n.js}
 └── README.md
 ```
 
 ---
 
-## How to push this to your own GitHub
+## انتشار روی GitHub خودتان
 
 ```bash
-# Create a new empty repository on GitHub (do not add README)
-
-cd mhr-cfw-webui
-
 git init
 git add .
-git commit -m "Initial commit: MHR-CFW Web UI helper"
-
+git commit -m "MHR-CFW Web UI — helper for denuitt1/mhr-cfw"
 git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/mhr-cfw-webui.git
 git push -u origin main
 ```
 
-Replace `YOUR_USERNAME` with your GitHub username.
+---
+
+## سلب مسئولیت
+
+این رابط فقط برای راحتی استفاده است.  
+استفاده از رله اصلی تابع مجوز و سلب‌مسئولیت پروژه اصلی است.  
+رعایت قوانین محلی و شرایط استفاده گوگل و کلادفلر بر عهده کاربر است.
 
 ---
 
-## Disclaimer
+## مجوز
 
-This Web UI is provided for convenience only.  
-Use of the underlying relay is subject to the original project's license and disclaimer.  
-You are responsible for complying with all applicable laws and the terms of service of Google and Cloudflare.
-
----
-
-## License
-
-The original mhr-cfw code retains its own license (MIT — see the upstream repository).  
-The Web UI code in this repository is also released under the MIT License.
+کد اصلی mhr-cfw تحت مجوز خودش (MIT در مخزن بالادستی) باقی می‌ماند.  
+کد این Web UI نیز تحت MIT منتشر می‌شود.
