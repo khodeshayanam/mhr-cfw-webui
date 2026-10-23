@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MHR-CFW Web UI</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo">⚡</div>
+        <div>
+          <h1>MHR-CFW <span class="badge">Web UI</span></h1>
+          <p class="subtitle" data-i18n="subtitle">Local control panel for the domain-fronting relay</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="theme-switcher">
+          <button type="button" data-theme-btn="light" title="Light">☀️</button>
+          <button type="button" data-theme-btn="dark" title="Dark">🌙</button>
+          <button type="button" data-theme-btn="neon" title="Neon">💜</button>
+        </div>
+        <div class="lang-switcher">
+          <button type="button" data-lang="en">EN</button>
+          <button type="button" data-lang="fa">FA</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Status bar -->
+    <section class="status-bar">
+      <div class="status-item">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText" data-i18n="status.stopped">Stopped</span>
+      </div>
+      <div class="status-item">
+        <span class="label" data-i18n="stats.requests">Requests</span>
+        <strong id="reqCount">0</strong>
+      </div>
+      <div class="status-item">
+        <span class="label">PID</span>
+        <strong id="pidVal">—</strong>
+      </div>
+      <div class="status-actions">
+        <button class="btn btn-primary" id="btnStart" data-i18n="btn.start">Start Proxy</button>
+        <button class="btn btn-danger" id="btnStop" data-i18n="btn.stop" disabled>Stop</button>
+      </div>
+    </section>
+
+    <main class="main">
+      <!-- Left column: Config + Deps -->
+      <div class="col">
+        <!-- Dependencies card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 data-i18n="deps.title">Dependencies</h2>
+            <button class="btn btn-sm" id="btnRefreshDeps" data-i18n="btn.refresh">Refresh</button>
+          </div>
+          <div class="card-body">
+            <ul class="dep-list" id="depList"></ul>
+            <div class="dep-actions">
+              <label class="checkbox">
+                <input type="checkbox" id="useMirror" />
+                <span data-i18n="deps.mirror">Use PyPI mirror (Iran)</span>
+              </label>
+              <button class="btn btn-secondary" id="btnInstall" data-i18n="btn.install">Install / Update packages</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Config card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 data-i18n="config.title">Configuration</h2>
+          </div>
+          <div class="card-body">
+            <form id="configForm">
+              <div class="field">
+                <label data-i18n="config.auth_key">Auth Key (AUTH_KEY)</label>
+                <input type="text" name="auth_key" id="auth_key" placeholder="your-secret-password" autocomplete="off" required />
+                <small data-i18n="config.auth_key_hint">Must match AUTH_KEY in Code.gs</small>
+              </div>
+              <div class="field">
+                <label data-i18n="config.script_id">Deployment ID(s)</label>
+                <input type="text" name="script_id" id="script_id" placeholder="AKfycb…" autocomplete="off" required />
+                <small data-i18n="config.script_id_hint">Comma-separated for multiple scripts</small>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label data-i18n="config.listen_host">Listen Host</label>
+                  <input type="text" name="listen_host" id="listen_host" value="127.0.0.1" />
+                </div>
+                <div class="field">
+                  <label data-i18n="config.listen_port">HTTP Port</label>
+                  <input type="number" name="listen_port" id="listen_port" value="8085" min="1" max="65535" />
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label class="checkbox">
+                    <input type="checkbox" name="socks5_enabled" id="socks5_enabled" checked />
+                    <span data-i18n="config.socks5">Enable SOCKS5</span>
+                  </label>
+                </div>
+                <div class="field">
+                  <label data-i18n="config.socks5_port">SOCKS5 Port</label>
+                  <input type="number" name="socks5_port" id="socks5_port" value="1080" min="1" max="65535" />
+                </div>
+              </div>
+              <div class="field">
+                <label class="checkbox">
+                  <input type="checkbox" name="lan_sharing" id="lan_sharing" />
+                  <span data-i18n="config.lan_sharing">LAN Sharing (bind 0.0.0.0)</span>
+                </label>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label data-i18n="config.front_domain">Front Domain</label>
+                  <input type="text" name="front_domain" id="front_domain" value="www.google.com" />
+                </div>
+                <div class="field">
+                  <label data-i18n="config.log_level">Log Level</label>
+                  <select name="log_level" id="log_level">
+                    <option value="DEBUG">DEBUG</option>
+                    <option value="INFO" selected>INFO</option>
+                    <option value="WARNING">WARNING</option>
+                    <option value="ERROR">ERROR</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" data-i18n="btn.save">Save Config</button>
+                <button type="button" class="btn btn-secondary" id="btnScan" data-i18n="btn.scan">Scan Google IPs</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column: Logs -->
+      <div class="col col-wide">
+        <div class="card log-card">
+          <div class="card-header">
+            <h2 data-i18n="logs.title">Live Logs</h2>
+            <div class="log-actions">
+              <button class="btn btn-sm" id="btnClearLogs" data-i18n="btn.clear">Clear</button>
+              <button class="btn btn-sm" id="btnCopyLogs" data-i18n="btn.copy">Copy</button>
+            </div>
+          </div>
+          <div class="card-body log-body">
+            <pre id="logView" class="log-view"></pre>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p data-i18n="footer">
+        This Web UI is an unofficial helper for the original project
+        <a href="https://github.com/denuitt1/mhr-cfw" target="_blank" rel="noopener">mhr-cfw by denuitt1</a>.
+        We only built a graphical interface to make setup and usage easier for users.
+      </p>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
