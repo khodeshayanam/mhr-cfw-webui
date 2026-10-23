@@ -128,6 +128,33 @@ def load_config() -> dict:
     }
 
 
+
+def get_lan_ips() -> list[str]:
+    """Best-effort list of non-loopback IPv4 addresses on this machine."""
+    ips: list[str] = []
+    try:
+        import socket
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if ip and not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+    except Exception:
+        pass
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.3)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip and not ip.startswith("127.") and ip not in ips:
+            ips.insert(0, ip)
+    except Exception:
+        pass
+    return ips
+
+
 def is_config_ready(cfg: dict | None = None) -> bool:
     """True when auth_key and script_id look valid (user already set them up)."""
     if cfg is None:
@@ -223,6 +250,42 @@ def api_status():
             "config_ready": is_config_ready(cfg),
         }
     )
+
+
+
+@app.route("/api/proxy-info")
+def api_proxy_info():
+    """Return ready-to-use proxy connection details for clients."""
+    cfg = load_config()
+    lan_sharing = bool(cfg.get("lan_sharing", False))
+    listen_host = cfg.get("listen_host") or "127.0.0.1"
+    http_port = int(cfg.get("listen_port") or 8085)
+    socks_enabled = cfg.get("socks5_enabled", True)
+    socks_port = int(cfg.get("socks5_port") or 1080)
+    lan_ips = get_lan_ips() if lan_sharing or listen_host in ("0.0.0.0", "::") else []
+
+    # Primary host shown to the user
+    if lan_sharing or listen_host in ("0.0.0.0", "::"):
+        primary = lan_ips[0] if lan_ips else "127.0.0.1"
+    else:
+        primary = listen_host if listen_host not in ("0.0.0.0", "::") else "127.0.0.1"
+
+    return jsonify({
+        "name": "mhr-cfw",
+        "host": primary,
+        "http_port": http_port,
+        "socks5_enabled": bool(socks_enabled),
+        "socks5_port": socks_port,
+        "lan_sharing": lan_sharing,
+        "lan_ips": lan_ips,
+        "http_url": f"http://{primary}:{http_port}",
+        "socks5_url": f"socks5://{primary}:{socks_port}",
+        "telegram_socks": {
+            "server": primary,
+            "port": socks_port,
+            "type": "socks5",
+        },
+    })
 
 
 @app.route("/api/config", methods=["GET", "POST"])

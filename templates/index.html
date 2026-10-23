@@ -128,6 +128,44 @@
           </div>
         </div>
 
+
+        <!-- Ready configs -->
+        <div class="card" id="configsCard">
+          <div class="card-header">
+            <h2 data-i18n="configs.title">کانفیگ‌ها</h2>
+            <button class="btn btn-sm" id="btnRefreshConfigs" data-i18n="btn.refresh">بروزرسانی</button>
+          </div>
+          <div class="card-body">
+            <p class="hint-text" data-i18n="configs.hint">
+              این مقادیر را در کلاینت (v2rayN، FoxyProxy، تلگرام و …) وارد کنید. اگر LAN Sharing فعال باشد، به‌جای 127.0.0.1 آی‌پی شبکه محلی نشان داده می‌شود.
+            </p>
+            <div class="config-blocks">
+              <div class="config-block">
+                <div class="config-block-head">
+                  <strong data-i18n="configs.socks">SOCKS5</strong>
+                  <button type="button" class="btn btn-sm btn-copy" data-copy="socks">📋</button>
+                </div>
+                <pre class="config-pre" id="cfgSocks"></pre>
+              </div>
+              <div class="config-block">
+                <div class="config-block-head">
+                  <strong data-i18n="configs.http">HTTP Proxy</strong>
+                  <button type="button" class="btn btn-sm btn-copy" data-copy="http">📋</button>
+                </div>
+                <pre class="config-pre" id="cfgHttp"></pre>
+              </div>
+              <div class="config-block">
+                <div class="config-block-head">
+                  <strong data-i18n="configs.telegram">Telegram (SOCKS5)</strong>
+                  <button type="button" class="btn btn-sm btn-copy" data-copy="telegram">📋</button>
+                </div>
+                <pre class="config-pre" id="cfgTelegram"></pre>
+              </div>
+            </div>
+            <p class="hint-text" id="lanNote" hidden></p>
+          </div>
+        </div>
+
         <!-- Dependencies (also collapsible) -->
         <div class="card collapsible" id="depsCard">
           <button type="button" class="card-header collapsible-toggle" id="depsToggle" aria-expanded="false">
@@ -170,6 +208,9 @@
         این رابط وب یک ابزار غیررسمی کمکی برای پروژه اصلی
         <a href="https://github.com/denuitt1/mhr-cfw" target="_blank" rel="noopener">mhr-cfw متعلق به denuitt1</a>
         است. ما صرفاً برای راحت‌تر شدن کار کاربران یک رابط گرافیکی ساخته‌ایم.
+      </p>
+      <p class="footer-repo">
+        <a href="https://github.com/khodeshayanam/mhr-cfw-webui" target="_blank" rel="noopener">GitHub: khodeshayanam/mhr-cfw-webui</a>
       </p>
     </footer>
   </div>

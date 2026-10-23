@@ -587,3 +587,43 @@ a:hover { text-decoration: underline; }
   color: var(--text-muted);
   line-height: 1.45;
 }
+
+/* ─── Config blocks ─────────────────────────────────────────────────────── */
+.config-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.config-block {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--input-bg);
+}
+
+.config-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 0.85rem;
+}
+
+.config-pre {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.footer-repo {
+  margin-top: 0.5rem !important;
+  font-size: 0.85rem;
+}

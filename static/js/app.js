@@ -148,6 +148,7 @@ async function saveConfig(e) {
       configReady = !!data.config_ready;
       toast(t("toast.saved"), "success");
       updateHeroHint();
+      refreshProxyConfigs();
       if (configReady) {
         setCollapsed("#settingsToggle", "#settingsBody", true);
       }
@@ -267,6 +268,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#btnRefreshDeps").addEventListener("click", refreshStatus);
   $("#btnScan").addEventListener("click", runScan);
   $("#btnClearLogs").addEventListener("click", clearLogs);
+  const btnRc = $("#btnRefreshConfigs");
+  if (btnRc) btnRc.addEventListener("click", refreshProxyConfigs);
+  document.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", () => copyConfig(btn.getAttribute("data-copy")));
+  });
   $("#btnCopyLogs").addEventListener("click", () => {
     navigator.clipboard.writeText(logView.innerText).then(() => {
       toast(t("toast.copied"), "success");
@@ -275,6 +281,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await loadConfig();
   await refreshStatus();
+  await refreshProxyConfigs();
 
   if (configReady) {
     setCollapsed("#settingsToggle", "#settingsBody", true);
