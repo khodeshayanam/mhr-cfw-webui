@@ -131,13 +131,69 @@ def load_config() -> dict:
 
 
 
+def _windows_proxy_notify() -> None:
+    """Tell WinINet that Internet Settings changed."""
+    try:
+        import ctypes
+        internet_set_option = ctypes.windll.Wininet.InternetSetOptionW
+        INTERNET_OPTION_SETTINGS_CHANGED = 39
+        INTERNET_OPTION_REFRESH = 37
+        internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
+        internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
+    except Exception:
+        pass
+
+
+def _read_windows_proxy() -> tuple[int, str]:
+    """Return (ProxyEnable, ProxyServer) from current user Internet Settings."""
+    if sys.platform != "win32":
+        return 0, ""
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            0,
+            winreg.KEY_READ,
+        )
+        try:
+            enable, _ = winreg.QueryValueEx(key, "ProxyEnable")
+        except FileNotFoundError:
+            enable = 0
+        try:
+            server, _ = winreg.QueryValueEx(key, "ProxyServer")
+        except FileNotFoundError:
+            server = ""
+        winreg.CloseKey(key)
+        return int(enable or 0), str(server or "")
+    except Exception:
+        return 0, ""
+
+
+def _is_our_system_proxy(server: str, port: int | None = None) -> bool:
+    """True if ProxyServer points at this machine's mhr-cfw HTTP port."""
+    s = (server or "").lower().replace(" ", "")
+    if not s:
+        return False
+    markers = ["127.0.0.1", "localhost"]
+    if port is None:
+        try:
+            cfg = load_config()
+            port = int(cfg.get("listen_port") or 8085)
+        except Exception:
+            port = 8085
+    port_s = str(port)
+    if not any(m in s for m in markers):
+        return False
+    return port_s in s
+
+
 def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
     """Enable OS HTTP(S) system proxy. Currently implemented for Windows."""
     if sys.platform != "win32":
         return False, "System proxy auto-set is only supported on Windows"
     try:
         import winreg
-        import ctypes
 
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -150,7 +206,6 @@ def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
         winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
         winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy)
         # Bypass local + Windows/Microsoft noise so GAS quota is not burned
-        # by Edge updates, Windows Update, telemetry, etc.
         bypass = ";".join([
             "<local>",
             "localhost",
@@ -193,25 +248,26 @@ def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
         except Exception:
             pass
         winreg.CloseKey(key)
-
-        # Notify WinInet that settings changed
-        INTERNET_OPTION_SETTINGS_CHANGED = 39
-        INTERNET_OPTION_REFRESH = 37
-        internet_set_option = ctypes.windll.Wininet.InternetSetOptionW
-        internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
-        internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
-        return True, f"System proxy set to {proxy}"
+        _windows_proxy_notify()
+        return True, f"System proxy set to {host}:{port}"
     except Exception as e:
         return False, str(e)
 
 
-def clear_system_proxy() -> tuple[bool, str]:
-    """Disable OS HTTP(S) system proxy (Windows)."""
+def clear_system_proxy(force: bool = False) -> tuple[bool, str]:
+    """Disable OS HTTP(S) system proxy (Windows).
+
+    If force is False, only clears when the current ProxyServer looks like ours
+    (127.0.0.1 / localhost + our listen port). force=True always disables.
+    """
     if sys.platform != "win32":
         return False, "System proxy auto-set is only supported on Windows"
     try:
         import winreg
-        import ctypes
+
+        enable, server = _read_windows_proxy()
+        if not force and enable and not _is_our_system_proxy(server):
+            return True, f"System proxy left untouched (not ours): {server}"
 
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -220,16 +276,38 @@ def clear_system_proxy() -> tuple[bool, str]:
             winreg.KEY_SET_VALUE,
         )
         winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+        # Clear server string so nothing is left half-configured
+        try:
+            winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, "")
+        except Exception:
+            pass
         winreg.CloseKey(key)
-
-        INTERNET_OPTION_SETTINGS_CHANGED = 39
-        INTERNET_OPTION_REFRESH = 37
-        internet_set_option = ctypes.windll.Wininet.InternetSetOptionW
-        internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
-        internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
+        _windows_proxy_notify()
         return True, "System proxy cleared"
     except Exception as e:
         return False, str(e)
+
+
+def ensure_system_proxy_off() -> None:
+    """Best-effort cleanup used on stop / exit / startup recovery."""
+    global system_proxy_owned
+    try:
+        ok, msg = clear_system_proxy(force=False)
+        # If we owned it, force clear even if detection failed
+        if system_proxy_owned:
+            ok2, msg2 = clear_system_proxy(force=True)
+            msg = msg2 or msg
+            ok = ok or ok2
+        system_proxy_owned = False
+        try:
+            _append_log(f"[webui] {msg}")
+        except Exception:
+            print(f"[webui] {msg}")
+    except Exception as e:
+        try:
+            _append_log(f"[webui] clear proxy error: {e}")
+        except Exception:
+            print(f"[webui] clear proxy error: {e}")
 
 
 def get_lan_ips() -> list[str]:
@@ -508,13 +586,10 @@ def api_start():
 
 @app.route("/api/stop", methods=["POST"])
 def api_stop():
-    global proxy_process, system_proxy_owned
+    global proxy_process
     if proxy_process is None or proxy_process.poll() is not None:
         proxy_process = None
-        if system_proxy_owned:
-            ok, msg = clear_system_proxy()
-            _append_log(f"[webui] {msg}")
-            system_proxy_owned = False
+        ensure_system_proxy_off()
         return jsonify({"ok": True, "message": "Not running"})
     try:
         proxy_process.terminate()
@@ -528,10 +603,7 @@ def api_stop():
         _append_log(f"[webui] Stop error: {e}")
     finally:
         proxy_process = None
-        if system_proxy_owned:
-            ok, msg = clear_system_proxy()
-            _append_log(f"[webui] {msg}")
-            system_proxy_owned = False
+        ensure_system_proxy_off()
     return jsonify({"ok": True})
 
 
@@ -584,12 +656,50 @@ def _open_browser():
 
 
 if __name__ == "__main__":
+    import atexit
+    import signal
+
+    def _cleanup(*_args):
+        global proxy_process
+        try:
+            if proxy_process is not None and proxy_process.poll() is None:
+                proxy_process.terminate()
+                try:
+                    proxy_process.wait(timeout=3)
+                except Exception:
+                    try:
+                        proxy_process.kill()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        proxy_process = None
+        ensure_system_proxy_off()
+
+    atexit.register(_cleanup)
+    try:
+        signal.signal(signal.SIGINT, lambda *a: (_cleanup(), sys.exit(0)))
+        signal.signal(signal.SIGTERM, lambda *a: (_cleanup(), sys.exit(0)))
+    except Exception:
+        pass
+
+    # Recover from previous crash: if system proxy still points at us, clear it
+    try:
+        enable, server = _read_windows_proxy()
+        if enable and _is_our_system_proxy(server):
+            print(f"  Found leftover system proxy ({server}) — clearing…")
+            clear_system_proxy(force=True)
+    except Exception:
+        pass
+
     print()
     print("  MHR-CFW Web UI")
     print("  Open → http://127.0.0.1:5050")
     print("  (This UI is a helper for the original project by denuitt1)")
     print()
-    # Auto-open browser (skip if already configured via env)
     if os.environ.get("MHR_NO_BROWSER") != "1":
         threading.Thread(target=_open_browser, daemon=True).start()
-    socketio.run(app, host="127.0.0.1", port=5050, debug=False, allow_unsafe_werkzeug=True)
+    try:
+        socketio.run(app, host="127.0.0.1", port=5050, debug=False, allow_unsafe_werkzeug=True)
+    finally:
+        _cleanup()
