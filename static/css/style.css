@@ -627,3 +627,10 @@ a:hover { text-decoration: underline; }
   margin-top: 0.5rem !important;
   font-size: 0.85rem;
 }
+
+.hero-sysproxy {
+  width: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}

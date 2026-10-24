@@ -32,6 +32,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # ── Global state ─────────────────────────────────────────────────────────────
 proxy_process: subprocess.Popen | None = None
+system_proxy_owned = False
 log_buffer: list[str] = []
 request_count = 0
 bytes_up = 0
@@ -127,6 +128,69 @@ def load_config() -> dict:
         "google_ip": "216.239.38.120",
     }
 
+
+
+
+def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
+    """Enable OS HTTP(S) system proxy. Currently implemented for Windows."""
+    if sys.platform != "win32":
+        return False, "System proxy auto-set is only supported on Windows"
+    try:
+        import winreg
+        import ctypes
+
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            0,
+            winreg.KEY_SET_VALUE,
+        )
+        proxy = f"{host}:{port}"
+        winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
+        winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy)
+        # Bypass local addresses
+        try:
+            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, "<local>;localhost;127.*")
+        except Exception:
+            pass
+        winreg.CloseKey(key)
+
+        # Notify WinInet that settings changed
+        INTERNET_OPTION_SETTINGS_CHANGED = 39
+        INTERNET_OPTION_REFRESH = 37
+        internet_set_option = ctypes.windll.Wininet.InternetSetOptionW
+        internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
+        internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
+        return True, f"System proxy set to {proxy}"
+    except Exception as e:
+        return False, str(e)
+
+
+def clear_system_proxy() -> tuple[bool, str]:
+    """Disable OS HTTP(S) system proxy (Windows)."""
+    if sys.platform != "win32":
+        return False, "System proxy auto-set is only supported on Windows"
+    try:
+        import winreg
+        import ctypes
+
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            0,
+            winreg.KEY_SET_VALUE,
+        )
+        winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+        winreg.CloseKey(key)
+
+        INTERNET_OPTION_SETTINGS_CHANGED = 39
+        INTERNET_OPTION_REFRESH = 37
+        internet_set_option = ctypes.windll.Wininet.InternetSetOptionW
+        internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
+        internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
+        return True, "System proxy cleared"
+    except Exception as e:
+        return False, str(e)
 
 
 def get_lan_ips() -> list[str]:
@@ -389,16 +453,29 @@ def api_start():
             target=_reader, args=(proxy_process.stdout, ""), daemon=True
         ).start()
         _append_log(f"[webui] Proxy started (pid={proxy_process.pid})")
-        return jsonify({"ok": True, "pid": proxy_process.pid})
+
+        global system_proxy_owned
+        body = request.get_json(force=True, silent=True) or {}
+        if body.get("system_proxy", True):
+            host = "127.0.0.1"
+            port = int(cfg.get("listen_port") or 8085)
+            ok, msg = set_system_proxy(host, port)
+            _append_log(f"[webui] {msg}")
+            system_proxy_owned = ok
+        return jsonify({"ok": True, "pid": proxy_process.pid, "system_proxy": system_proxy_owned})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/stop", methods=["POST"])
 def api_stop():
-    global proxy_process
+    global proxy_process, system_proxy_owned
     if proxy_process is None or proxy_process.poll() is not None:
         proxy_process = None
+        if system_proxy_owned:
+            ok, msg = clear_system_proxy()
+            _append_log(f"[webui] {msg}")
+            system_proxy_owned = False
         return jsonify({"ok": True, "message": "Not running"})
     try:
         proxy_process.terminate()
@@ -412,6 +489,10 @@ def api_stop():
         _append_log(f"[webui] Stop error: {e}")
     finally:
         proxy_process = None
+        if system_proxy_owned:
+            ok, msg = clear_system_proxy()
+            _append_log(f"[webui] {msg}")
+            system_proxy_owned = False
     return jsonify({"ok": True})
 
 

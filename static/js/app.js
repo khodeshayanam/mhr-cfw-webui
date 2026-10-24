@@ -261,7 +261,12 @@ async function startProxy() {
     if ($("#auth_key") && $("#auth_key").value.trim() && $("#script_id") && $("#script_id").value.trim()) {
       await saveConfig({ preventDefault() {} });
     }
-    const r = await fetch("/api/start", { method: "POST" });
+    const useSys = $("#systemProxy") ? $("#systemProxy").checked : true;
+    const r = await fetch("/api/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ system_proxy: useSys }),
+    });
     const data = await r.json();
     if (data.ok) {
       toast(t("toast.started"), "success");
