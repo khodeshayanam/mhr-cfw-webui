@@ -51,7 +51,7 @@
       </div>
       <label class="checkbox hero-sysproxy">
         <input type="checkbox" id="systemProxy" checked />
-        <span data-i18n="btn.system_proxy">تنظیم خودکار پروکسی ویندوز (بدون نیاز به v2ray / FoxyProxy)</span>
+        <span data-i18n="btn.system_proxy">تنظیم خودکار پروکسی ویندوز (مرورگر بدون v2ray / FoxyProxy)</span>
       </label>
       <p class="hero-hint" id="heroHint" data-i18n="hero.hint_ready">
         تنظیمات ذخیره شده‌اند. فقط پروکسی را روشن یا خاموش کنید.
@@ -132,43 +132,6 @@
           </div>
         </div>
 
-
-        <!-- Ready configs -->
-        <div class="card" id="configsCard">
-          <div class="card-header">
-            <h2 data-i18n="configs.title">کانفیگ‌ها</h2>
-            <button class="btn btn-sm" id="btnRefreshConfigs" data-i18n="btn.refresh">بروزرسانی</button>
-          </div>
-          <div class="card-body">
-            <p class="hint-text" data-i18n="configs.hint">
-              این مقادیر را در کلاینت (v2rayN، FoxyProxy، تلگرام و …) وارد کنید. اگر LAN Sharing فعال باشد، به‌جای 127.0.0.1 آی‌پی شبکه محلی نشان داده می‌شود.
-            </p>
-            <div class="config-blocks">
-              <div class="config-block">
-                <div class="config-block-head">
-                  <strong data-i18n="configs.socks">SOCKS5</strong>
-                  <button type="button" class="btn btn-sm btn-copy" data-copy="socks">📋</button>
-                </div>
-                <pre class="config-pre" id="cfgSocks"></pre>
-              </div>
-              <div class="config-block">
-                <div class="config-block-head">
-                  <strong data-i18n="configs.http">HTTP Proxy</strong>
-                  <button type="button" class="btn btn-sm btn-copy" data-copy="http">📋</button>
-                </div>
-                <pre class="config-pre" id="cfgHttp"></pre>
-              </div>
-              <div class="config-block">
-                <div class="config-block-head">
-                  <strong data-i18n="configs.telegram">Telegram (SOCKS5)</strong>
-                  <button type="button" class="btn btn-sm btn-copy" data-copy="telegram">📋</button>
-                </div>
-                <pre class="config-pre" id="cfgTelegram"></pre>
-              </div>
-            </div>
-            <p class="hint-text" id="lanNote" hidden></p>
-          </div>
-        </div>
 
         <!-- Dependencies (also collapsible) -->
         <div class="card collapsible" id="depsCard">

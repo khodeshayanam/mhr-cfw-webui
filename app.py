@@ -145,12 +145,51 @@ def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
             0,
             winreg.KEY_SET_VALUE,
         )
-        proxy = f"{host}:{port}"
+        # Apply to both HTTP and HTTPS protocols
+        proxy = f"http={host}:{port};https={host}:{port}"
         winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
         winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy)
-        # Bypass local addresses
+        # Bypass local + Windows/Microsoft noise so GAS quota is not burned
+        # by Edge updates, Windows Update, telemetry, etc.
+        bypass = ";".join([
+            "<local>",
+            "localhost",
+            "127.*",
+            "10.*",
+            "192.168.*",
+            "172.16.*",
+            "172.17.*",
+            "172.18.*",
+            "172.19.*",
+            "172.2*.*",
+            "172.30.*",
+            "172.31.*",
+            "*.local",
+            "*.lan",
+            "<-loopback>",
+            "*.microsoft.com",
+            "*.windows.com",
+            "*.windowsupdate.com",
+            "*.msn.com",
+            "*.live.com",
+            "*.office.com",
+            "*.office.net",
+            "*.skype.com",
+            "*.azure.com",
+            "*.azureedge.net",
+            "*.msftconnecttest.com",
+            "*.msedge.net",
+            "*.bing.com",
+            "*.microsoftonline.com",
+            "*.visualstudio.com",
+            "*.github.com",
+            "*.githubusercontent.com",
+            "*.npmjs.org",
+            "*.pypi.org",
+            "*.pythonhosted.org",
+        ])
         try:
-            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, "<local>;localhost;127.*")
+            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, bypass)
         except Exception:
             pass
         winreg.CloseKey(key)
