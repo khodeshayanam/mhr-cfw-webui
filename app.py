@@ -207,21 +207,31 @@ def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
         winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy)
         # Bypass local + Windows/Microsoft noise so GAS quota is not burned
         bypass = ";".join([
-            "<local>",
+            # CRITICAL: Web UI is on 127.0.0.1:5050 — must NEVER go through proxy
+            "127.0.0.1",
             "localhost",
-            "127.*",
+            "::1",
+            "<local>",
             "10.*",
             "192.168.*",
             "172.16.*",
             "172.17.*",
             "172.18.*",
             "172.19.*",
-            "172.2*.*",
+            "172.20.*",
+            "172.21.*",
+            "172.22.*",
+            "172.23.*",
+            "172.24.*",
+            "172.25.*",
+            "172.26.*",
+            "172.27.*",
+            "172.28.*",
+            "172.29.*",
             "172.30.*",
             "172.31.*",
             "*.local",
             "*.lan",
-            "<-loopback>",
             "*.microsoft.com",
             "*.windows.com",
             "*.windowsupdate.com",
@@ -236,12 +246,6 @@ def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
             "*.msedge.net",
             "*.bing.com",
             "*.microsoftonline.com",
-            "*.visualstudio.com",
-            "*.github.com",
-            "*.githubusercontent.com",
-            "*.npmjs.org",
-            "*.pypi.org",
-            "*.pythonhosted.org",
         ])
         try:
             winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, bypass)
@@ -255,20 +259,19 @@ def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
 
 
 def clear_system_proxy(force: bool = False) -> tuple[bool, str]:
-    """Disable OS HTTP(S) system proxy (Windows).
-
-    If force is False, only clears when the current ProxyServer looks like ours
-    (127.0.0.1 / localhost + our listen port). force=True always disables.
-    """
+    """Disable OS HTTP(S) system proxy (Windows) — multiple methods."""
     if sys.platform != "win32":
         return False, "System proxy auto-set is only supported on Windows"
+
+    enable, server = _read_windows_proxy()
+    if not force and enable and server and not _is_our_system_proxy(server):
+        return True, f"System proxy left untouched (not ours): {server}"
+
+    errors = []
+
+    # Method 1: winreg
     try:
         import winreg
-
-        enable, server = _read_windows_proxy()
-        if not force and enable and not _is_our_system_proxy(server):
-            return True, f"System proxy left untouched (not ours): {server}"
-
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
@@ -276,16 +279,52 @@ def clear_system_proxy(force: bool = False) -> tuple[bool, str]:
             winreg.KEY_SET_VALUE,
         )
         winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
-        # Clear server string so nothing is left half-configured
         try:
             winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, "")
         except Exception:
             pass
         winreg.CloseKey(key)
         _windows_proxy_notify()
-        return True, "System proxy cleared"
     except Exception as e:
-        return False, str(e)
+        errors.append(f"winreg: {e}")
+
+    # Method 2: PowerShell registry write
+    try:
+        ps = (
+            "$p='HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'; "
+            "Set-ItemProperty -Path $p -Name ProxyEnable -Value 0; "
+            "Set-ItemProperty -Path $p -Name ProxyServer -Value ''; "
+            "Write-Output done"
+        )
+        flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+        subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+            capture_output=True,
+            timeout=15,
+            creationflags=flags,
+        )
+    except Exception as e:
+        errors.append(f"powershell: {e}")
+
+    # Method 3: netsh winhttp (affects some services)
+    try:
+        subprocess.run(
+            ["netsh", "winhttp", "reset", "proxy"],
+            capture_output=True,
+            timeout=10,
+            creationflags=0x08000000 if sys.platform == "win32" else 0,
+        )
+    except Exception as e:
+        errors.append(f"netsh: {e}")
+
+    # Verify
+    enable2, server2 = _read_windows_proxy()
+    if enable2 == 0:
+        return True, "System proxy cleared"
+    if errors:
+        return False, "Clear attempted but still enabled; errors: " + "; ".join(errors)
+    return False, f"Proxy still enabled after clear (server={server2})"
+
 
 
 def ensure_system_proxy_off() -> None:

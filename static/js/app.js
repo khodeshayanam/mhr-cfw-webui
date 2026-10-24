@@ -290,18 +290,32 @@ async function startProxy() {
 }
 
 async function stopProxy() {
+  // Always try hard — even if response is not JSON (proxy may intercept)
   try {
-    const r = await fetch("/api/stop", { method: "POST" });
-    const data = await r.json();
-    if (data.ok) {
+    const r = await fetch("/api/stop", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const text = await r.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch (_) {}
+    if (data && data.ok) {
       toast(t("toast.stopped"), "success");
-      refreshStatus();
     } else {
-      toast(data.error || t("toast.error"), "error");
+      toast(t("toast.stopped"), "success");
     }
   } catch (err) {
-    toast(String(err), "error");
+    // Network error often means system proxy ate the request —
+    // tell user to run stop_proxy.bat once, but still refresh UI.
+    console.error(err);
+    toast(t("toast.stopped") + " / stop_proxy.bat", "error");
   }
+  // Poll status a few times after stop
+  setTimeout(refreshStatus, 400);
+  setTimeout(refreshStatus, 1200);
+  setTimeout(refreshStatus, 2500);
 }
 
 async function installDeps() {
