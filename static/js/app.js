@@ -175,6 +175,7 @@ async function refreshStatus() {
     const data = await r.json();
     isRunning = !!data.running;
     configReady = !!data.config_ready;
+    const sysProxy = !!data.system_proxy_active;
     const dot = $("#statusDot");
     if (dot) dot.className = "dot big " + (isRunning ? "running" : "stopped");
     const st = $("#statusText");
@@ -185,8 +186,14 @@ async function refreshStatus() {
     if (pid) pid.textContent = data.pid ?? "—";
     const bs = $("#btnStart");
     const bt = $("#btnStop");
+    // Start disabled only while truly running; Stop always clickable if
+    // process/port active OR system proxy still points at us.
     if (bs) bs.disabled = isRunning;
-    if (bt) bt.disabled = !isRunning;
+    if (bt) bt.disabled = !(isRunning || sysProxy);
+    // Visual: if system proxy stuck, keep Stop looking active
+    if (bt && (isRunning || sysProxy)) {
+      bt.removeAttribute("disabled");
+    }
     renderDeps(data.deps);
     updateHeroHint();
   } catch (e) {

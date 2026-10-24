@@ -412,6 +412,32 @@ def save_config(data: dict) -> None:
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
+
+def is_port_in_use(host: str, port: int) -> bool:
+    """True if something accepts TCP connections on host:port."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.35)
+            return s.connect_ex((host, int(port))) == 0
+    except Exception:
+        return False
+
+
+def proxy_seems_running() -> bool:
+    """Process handle alive OR listen port open (covers orphaned child)."""
+    global proxy_process
+    if proxy_process is not None and proxy_process.poll() is None:
+        return True
+    try:
+        cfg = load_config()
+        port = int(cfg.get("listen_port") or 8085)
+    except Exception:
+        port = 8085
+    # Check localhost — even when bound to 0.0.0.0 it answers on 127.0.0.1
+    return is_port_in_use("127.0.0.1", port)
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -419,16 +445,26 @@ def index():
 
 @app.route("/api/status")
 def api_status():
-    running = proxy_process is not None and proxy_process.poll() is None
+    global proxy_process
+    proc_alive = proxy_process is not None and proxy_process.poll() is None
+    running = proxy_seems_running()
     cfg = load_config()
+    enable, server = (0, "")
+    try:
+        enable, server = _read_windows_proxy()
+    except Exception:
+        pass
+    our_sys = bool(enable and _is_our_system_proxy(server))
     return jsonify(
         {
             "running": running,
-            "pid": proxy_process.pid if running else None,
+            "pid": proxy_process.pid if proc_alive else None,
             "requests": request_count,
             "deps": get_deps_status(),
             "config_exists": CONFIG_PATH.exists(),
             "config_ready": is_config_ready(cfg),
+            "system_proxy_active": our_sys,
+            "system_proxy_server": server if our_sys else "",
         }
     )
 
@@ -586,25 +622,83 @@ def api_start():
 
 @app.route("/api/stop", methods=["POST"])
 def api_stop():
+    """Always try hard to stop the proxy process and clear system proxy."""
     global proxy_process
-    if proxy_process is None or proxy_process.poll() is not None:
-        proxy_process = None
-        ensure_system_proxy_off()
-        return jsonify({"ok": True, "message": "Not running"})
-    try:
-        proxy_process.terminate()
+    stopped = False
+
+    # 1) Kill tracked subprocess
+    if proxy_process is not None and proxy_process.poll() is None:
         try:
-            proxy_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proxy_process.kill()
-            proxy_process.wait(timeout=3)
-        _append_log("[webui] Proxy stopped")
+            proxy_process.terminate()
+            try:
+                proxy_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proxy_process.kill()
+                proxy_process.wait(timeout=3)
+            stopped = True
+            _append_log("[webui] Proxy process terminated")
+        except Exception as e:
+            _append_log(f"[webui] Stop error: {e}")
+    proxy_process = None
+
+    # 2) If port still open (orphaned child), kill listeners on Windows
+    try:
+        cfg = load_config()
+        port = int(cfg.get("listen_port") or 8085)
+    except Exception:
+        port = 8085
+
+    if is_port_in_use("127.0.0.1", port):
+        _append_log(f"[webui] Port {port} still in use — force killing listeners…")
+        if sys.platform == "win32":
+            try:
+                # Find PIDs listening on the port and taskkill them
+                find = subprocess.run(
+                    ["netstat", "-ano"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                pids = set()
+                for line in (find.stdout or "").splitlines():
+                    line_s = line.strip()
+                    if f":{port}" in line_s and ("LISTENING" in line_s or "LISTEN" in line_s):
+                        parts = line_s.split()
+                        if parts:
+                            pid = parts[-1]
+                            if pid.isdigit() and pid != "0":
+                                pids.add(pid)
+                for pid in pids:
+                    subprocess.run(
+                        ["taskkill", "/PID", pid, "/F", "/T"],
+                        capture_output=True,
+                        timeout=10,
+                    )
+                    _append_log(f"[webui] taskkill PID {pid}")
+                    stopped = True
+            except Exception as e:
+                _append_log(f"[webui] force kill error: {e}")
+        else:
+            try:
+                subprocess.run(
+                    ["fuser", "-k", f"{port}/tcp"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                stopped = True
+            except Exception as e:
+                _append_log(f"[webui] fuser error: {e}")
+
+    # 3) Always clear system proxy (ours or leftover pointing at us)
+    ensure_system_proxy_off()
+    # Force one more time for safety
+    try:
+        clear_system_proxy(force=True)
+        _append_log("[webui] System proxy force-cleared")
     except Exception as e:
-        _append_log(f"[webui] Stop error: {e}")
-    finally:
-        proxy_process = None
-        ensure_system_proxy_off()
-    return jsonify({"ok": True})
+        _append_log(f"[webui] force clear error: {e}")
+
+    return jsonify({"ok": True, "stopped": stopped})
 
 
 @app.route("/api/logs")
