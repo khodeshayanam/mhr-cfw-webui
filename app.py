@@ -17,6 +17,10 @@ import time
 import webbrowser
 from pathlib import Path
 
+import secrets
+from functools import wraps
+from urllib.parse import urlparse
+
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 
@@ -26,9 +30,22 @@ EXAMPLE_PATH = HERE / "config.example.json"
 ORIGINAL_REQ = HERE / "requirements.txt"
 WEBUI_REQ = HERE / "requirements-webui.txt"
 
+# Local-only UI origins (CSRF / CORS allowlist)
+ALLOWED_ORIGINS = (
+    "http://127.0.0.1:5050",
+    "http://localhost:5050",
+    "http://[::1]:5050",
+)
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "mhr-cfw-webui-local-only"
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+app.config["SECRET_KEY"] = secrets.token_hex(16)
+# One random token per process; injected into the page and required on mutating APIs
+CSRF_TOKEN = secrets.token_urlsafe(32)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=list(ALLOWED_ORIGINS),
+    async_mode="threading",
+)
 
 # ── Global state ─────────────────────────────────────────────────────────────
 proxy_process: subprocess.Popen | None = None
@@ -171,21 +188,62 @@ def _read_windows_proxy() -> tuple[int, str]:
 
 
 def _is_our_system_proxy(server: str, port: int | None = None) -> bool:
-    """True if ProxyServer points at this machine's mhr-cfw HTTP port."""
-    s = (server or "").lower().replace(" ", "")
+    """True if ProxyServer points at this machine's mhr-cfw HTTP port.
+
+    Parses Windows ProxyServer forms:
+      host:port
+      http=host:port;https=host:port
+    and compares host/port exactly (no substring false positives).
+    """
+    s = (server or "").strip()
     if not s:
         return False
-    markers = ["127.0.0.1", "localhost"]
     if port is None:
         try:
             cfg = load_config()
             port = int(cfg.get("listen_port") or 8085)
         except Exception:
             port = 8085
-    port_s = str(port)
-    if not any(m in s for m in markers):
-        return False
-    return port_s in s
+    port = int(port)
+    allowed_hosts = {"127.0.0.1", "localhost", "::1"}
+
+    # Split scheme assignments: http=...;https=...
+    parts = [p.strip() for p in s.split(";") if p.strip()]
+    candidates: list[str] = []
+    for part in parts:
+        if "=" in part:
+            candidates.append(part.split("=", 1)[1].strip())
+        else:
+            candidates.append(part)
+
+    for cand in candidates:
+        cand = cand.strip().lower()
+        if not cand:
+            continue
+        # strip optional scheme://
+        if "://" in cand:
+            cand = cand.split("://", 1)[1]
+        # host:port (IPv6 in brackets rare in this registry field)
+        if cand.startswith("["):
+            # [app]:port
+            if "]" in cand:
+                host = cand[1:cand.index("]")]
+                rest = cand[cand.index("]") + 1 :]
+                p = int(rest[1:]) if rest.startswith(":") and rest[1:].isdigit() else None
+            else:
+                continue
+        elif ":" in cand:
+            host, _, port_s = cand.rpartition(":")
+            host = host.strip().lower()
+            try:
+                p = int(port_s)
+            except ValueError:
+                continue
+        else:
+            continue
+        if host in allowed_hosts and p == port:
+            return True
+    return False
 
 
 def set_system_proxy(host: str, port: int) -> tuple[bool, str]:
@@ -449,6 +507,47 @@ def save_config(data: dict) -> None:
         f.write("\n")
 
 
+
+def _request_origin_ok() -> bool:
+    """Allow same-origin browser calls; reject cross-site POSTs."""
+    origin = (request.headers.get("Origin") or "").rstrip("/")
+    referer = request.headers.get("Referer") or ""
+    if origin:
+        return origin in ALLOWED_ORIGINS
+    if referer:
+        try:
+            p = urlparse(referer)
+            base = f"{p.scheme}://{p.netloc}"
+            return base in ALLOWED_ORIGINS
+        except Exception:
+            return False
+    # Non-browser clients (curl) have neither — allow only with valid CSRF header
+    return True
+
+
+def _csrf_ok() -> bool:
+    token = request.headers.get("X-CSRF-Token") or ""
+    if not token and request.is_json:
+        try:
+            token = (request.get_json(silent=True) or {}).get("csrf_token") or ""
+        except Exception:
+            token = ""
+    return bool(token) and secrets.compare_digest(token, CSRF_TOKEN)
+
+
+def require_local_mutation(fn):
+    """Protect state-changing API routes from cross-site browser requests."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            if not _request_origin_ok():
+                return jsonify({"ok": False, "error": "forbidden origin"}), 403
+            if not _csrf_ok():
+                return jsonify({"ok": False, "error": "invalid csrf token"}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 
@@ -479,7 +578,7 @@ def proxy_seems_running() -> bool:
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", csrf_token=CSRF_TOKEN)
 
 
 @app.route("/api/status")
@@ -494,11 +593,13 @@ def api_status():
     except Exception:
         pass
     our_sys = bool(enable and _is_our_system_proxy(server))
+    with _lock:
+        reqs = request_count
     return jsonify(
         {
             "running": running,
             "pid": proxy_process.pid if proc_alive else None,
-            "requests": request_count,
+            "requests": reqs,
             "deps": get_deps_status(),
             "config_exists": CONFIG_PATH.exists(),
             "config_ready": is_config_ready(cfg),
@@ -545,6 +646,7 @@ def api_proxy_info():
 
 
 @app.route("/api/config", methods=["GET", "POST"])
+@require_local_mutation
 def api_config():
     if request.method == "GET":
         return jsonify(load_config())
@@ -570,6 +672,7 @@ def api_config():
 
 
 @app.route("/api/install-deps", methods=["POST"])
+@require_local_mutation
 def api_install_deps():
     body = request.get_json(force=True, silent=True) or {}
     use_mirror = bool(body.get("use_mirror", False))
@@ -608,6 +711,7 @@ def api_install_deps():
 
 
 @app.route("/api/start", methods=["POST"])
+@require_local_mutation
 def api_start():
     global proxy_process, request_count
     if proxy_process is not None and proxy_process.poll() is None:
@@ -660,6 +764,7 @@ def api_start():
 
 
 @app.route("/api/stop", methods=["POST"])
+@require_local_mutation
 def api_stop():
     """Always try hard to stop the proxy process and clear system proxy."""
     global proxy_process
@@ -747,6 +852,7 @@ def api_logs():
 
 
 @app.route("/api/scan", methods=["POST"])
+@require_local_mutation
 def api_scan():
     def _run():
         _append_log("[webui] Starting Google IP scan…")

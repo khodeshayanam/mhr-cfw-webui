@@ -3,6 +3,27 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+function csrfToken() {
+  const el = document.querySelector('meta[name="csrf-token"]');
+  return el ? el.getAttribute("content") || "" : "";
+}
+
+function apiHeaders(extra) {
+  const h = Object.assign({ "X-CSRF-Token": csrfToken() }, extra || {});
+  return h;
+}
+
+async function apiFetch(url, options) {
+  options = options || {};
+  const opts = Object.assign({}, options);
+  opts.headers = apiHeaders(options.headers || {});
+  if (opts.body && !opts.headers["Content-Type"]) {
+    opts.headers["Content-Type"] = "application/json";
+  }
+  return fetch(url, opts);
+}
+
+
 let socket = null;
 let isRunning = false;
 let configReady = false;
@@ -241,9 +262,8 @@ async function saveConfig(e) {
     mode: "apps_script",
   };
   try {
-    const r = await fetch("/api/config", {
+    const r = await apiFetch("/api/config", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     const data = await r.json();
@@ -269,9 +289,8 @@ async function startProxy() {
       await saveConfig({ preventDefault() {} });
     }
     const useSys = $("#systemProxy") ? $("#systemProxy").checked : true;
-    const r = await fetch("/api/start", {
+    const r = await apiFetch("/api/start", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ system_proxy: useSys }),
     });
     const data = await r.json();
@@ -292,10 +311,9 @@ async function startProxy() {
 async function stopProxy() {
   // Always try hard — even if response is not JSON (proxy may intercept)
   try {
-    const r = await fetch("/api/stop", {
+    const r = await apiFetch("/api/stop", {
       method: "POST",
       cache: "no-store",
-      headers: { "Content-Type": "application/json" },
       body: "{}",
     });
     const text = await r.text();
@@ -321,9 +339,8 @@ async function stopProxy() {
 async function installDeps() {
   toast(t("toast.install"), "success");
   try {
-    await fetch("/api/install-deps", {
+    await apiFetch("/api/install-deps", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ use_mirror: $("#useMirror") && $("#useMirror").checked }),
     });
   } catch (err) {
@@ -333,7 +350,7 @@ async function installDeps() {
 
 async function runScan() {
   try {
-    await fetch("/api/scan", { method: "POST" });
+    await apiFetch("/api/scan", { method: "POST" });
   } catch (err) {
     toast(String(err), "error");
   }
