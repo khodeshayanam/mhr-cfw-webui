@@ -349,10 +349,10 @@ def clear_system_proxy(force: bool = False) -> tuple[bool, str]:
     # Method 2: PowerShell registry write
     try:
         ps = (
-            "$p='HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'; "
-            "Set-ItemProperty -Path $p -Name ProxyEnable -Value 0; "
-            "Set-ItemProperty -Path $p -Name ProxyServer -Value ''; "
-            "Write-Output done"
+            r"$p='HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'; "
+            r"Set-ItemProperty -Path $p -Name ProxyEnable -Value 0; "
+            r"Set-ItemProperty -Path $p -Name ProxyServer -Value ''; "
+            r"Write-Output done"
         )
         flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
         subprocess.run(
@@ -434,21 +434,26 @@ def get_lan_ips() -> list[str]:
 
 
 def is_config_ready(cfg: dict | None = None) -> bool:
-    """True when auth_key and script_id look valid (user already set them up)."""
+    """True when auth_key and at least one real script_id look configured."""
     if cfg is None:
         cfg = load_config()
     key = (cfg.get("auth_key") or "").strip()
-    sid = cfg.get("script_id") or cfg.get("script_ids")
-    if isinstance(sid, list):
-        sid = sid[0] if sid else ""
-    sid = (sid or "").strip()
     placeholders = {
         "",
         "CHANGE_ME_TO_A_STRONG_SECRET",
         "your-secret-password-here",
         "YOUR_APPS_SCRIPT_DEPLOYMENT_ID",
     }
-    return key not in placeholders and sid not in placeholders and bool(sid)
+    if key in placeholders:
+        return False
+    raw = cfg.get("script_ids") if cfg.get("script_ids") else cfg.get("script_id")
+    ids: list[str] = []
+    if isinstance(raw, list):
+        ids = [str(x).strip() for x in raw if str(x).strip()]
+    elif isinstance(raw, str):
+        ids = [x.strip() for x in raw.split(",") if x.strip()]
+    ids = [i for i in ids if i not in placeholders]
+    return bool(ids)
 
 
 def save_config(data: dict) -> None:
@@ -521,7 +526,8 @@ def _request_origin_ok() -> bool:
             return base in ALLOWED_ORIGINS
         except Exception:
             return False
-    # Non-browser clients (curl) have neither — allow only with valid CSRF header
+    # No Origin/Referer (e.g. curl). Not enough by itself —
+    # require_local_mutation still requires a valid CSRF token via _csrf_ok().
     return True
 
 
