@@ -222,36 +222,167 @@ async function refreshStatus() {
   }
 }
 
+
+// ── Deployment ID switcher (Web UI only; maps to core script_id / script_ids) ─
+let scriptIdRows = [""]; // values
+let activeScriptIndex = 0;
+
+function isParallelMode() {
+  const el = $("#parallel_scripts");
+  return !!(el && el.checked);
+}
+
+function syncParallelBodyClass() {
+  document.body.classList.toggle("parallel-on", isParallelMode());
+  renderScriptIdRows();
+}
+
+function renderScriptIdRows() {
+  const list = $("#scriptIdList");
+  if (!list) return;
+  if (!scriptIdRows.length) scriptIdRows = [""];
+  if (activeScriptIndex >= scriptIdRows.length) activeScriptIndex = scriptIdRows.length - 1;
+  if (activeScriptIndex < 0) activeScriptIndex = 0;
+  const parallel = isParallelMode();
+  list.innerHTML = "";
+  scriptIdRows.forEach((val, idx) => {
+    const row = document.createElement("div");
+    row.className = "script-id-row" + (!parallel && idx === activeScriptIndex ? " active" : "");
+    row.dataset.index = String(idx);
+
+    const badge = document.createElement("span");
+    badge.className = "sid-badge";
+    badge.setAttribute("data-i18n", "config.active");
+    badge.textContent = (typeof t === "function" ? t("config.active") : "Active");
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "AKfycb…";
+    input.autocomplete = "off";
+    input.value = val || "";
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("input", () => {
+      scriptIdRows[idx] = input.value;
+    });
+    input.addEventListener("focus", () => {
+      if (!isParallelMode() && activeScriptIndex !== idx) {
+        activeScriptIndex = idx;
+        list.querySelectorAll(".script-id-row").forEach((r) => {
+          r.classList.toggle("active", r.dataset.index === String(idx));
+        });
+      }
+    });
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "btn btn-ghost btn-sm btn-remove-sid";
+    remove.textContent = "×";
+    remove.title = typeof t === "function" ? t("config.remove_script") : "Remove";
+    remove.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (scriptIdRows.length <= 1) {
+        scriptIdRows[0] = "";
+        activeScriptIndex = 0;
+      } else {
+        scriptIdRows.splice(idx, 1);
+        if (activeScriptIndex >= scriptIdRows.length) activeScriptIndex = scriptIdRows.length - 1;
+        else if (activeScriptIndex > idx) activeScriptIndex -= 1;
+      }
+      renderScriptIdRows();
+    });
+
+    row.addEventListener("click", () => {
+      if (isParallelMode()) return;
+      activeScriptIndex = idx;
+      renderScriptIdRows();
+    });
+
+    row.appendChild(badge);
+    row.appendChild(input);
+    row.appendChild(remove);
+    list.appendChild(row);
+  });
+}
+
+function addScriptIdRow() {
+  scriptIdRows.push("");
+  if (!isParallelMode()) activeScriptIndex = scriptIdRows.length - 1;
+  renderScriptIdRows();
+  const list = $("#scriptIdList");
+  const last = list && list.querySelector(".script-id-row:last-child input");
+  if (last) last.focus();
+}
+
+function collectScriptIdsFromUi() {
+  const list = $("#scriptIdList");
+  if (list) {
+    const inputs = list.querySelectorAll("input[type='text']");
+    scriptIdRows = Array.from(inputs).map((el) => (el.value || "").trim());
+  }
+  return scriptIdRows.filter((x) => x);
+}
+
+
 async function loadConfig() {
   try {
     const r = await fetch("/api/config");
-    const cfg = await r.json();
-    const sid = cfg.script_ids
-      ? (Array.isArray(cfg.script_ids) ? cfg.script_ids.join(", ") : cfg.script_ids)
-      : cfg.script_id || "";
+    const data = await r.json();
+    const cfg = data.config || data;
     if ($("#auth_key")) $("#auth_key").value = cfg.auth_key || "";
-    if ($("#script_id")) $("#script_id").value = sid;
-    if ($("#listen_host")) $("#listen_host").value = cfg.listen_host || "127.0.0.1";
-    if ($("#listen_port")) $("#listen_port").value = cfg.listen_port ?? 8085;
-    if ($("#socks5_enabled")) $("#socks5_enabled").checked = cfg.socks5_enabled !== false;
-    if ($("#socks5_port")) $("#socks5_port").value = cfg.socks5_port ?? 1080;
-    // Default LAN sharing ON when key missing
-    if ($("#lan_sharing")) {
-      $("#lan_sharing").checked =
-        cfg.lan_sharing === undefined ? true : !!cfg.lan_sharing;
+
+    let ids = [];
+    if (Array.isArray(cfg.webui_script_ids) && cfg.webui_script_ids.length) {
+      ids = cfg.webui_script_ids.map(String);
+    } else if (Array.isArray(cfg.script_ids) && cfg.script_ids.length) {
+      ids = cfg.script_ids.map(String);
+    } else if (cfg.script_id) {
+      ids = [String(cfg.script_id)];
     }
+    if (!ids.length) ids = [""];
+    scriptIdRows = ids;
+    try {
+      activeScriptIndex = parseInt(cfg.webui_active_index, 10) || 0;
+    } catch (_) {
+      activeScriptIndex = 0;
+    }
+    if (activeScriptIndex >= scriptIdRows.length) activeScriptIndex = 0;
+
+    const parallel =
+      !!cfg.parallel_scripts ||
+      (Array.isArray(cfg.script_ids) && cfg.script_ids.length > 1 && (cfg.parallel_relay || 1) > 1);
+    if ($("#parallel_scripts")) $("#parallel_scripts").checked = parallel;
+    syncParallelBodyClass();
+
+    if ($("#listen_host")) $("#listen_host").value = cfg.listen_host || "127.0.0.1";
+    if ($("#listen_port")) $("#listen_port").value = cfg.listen_port || 8085;
+    if ($("#socks5_enabled")) $("#socks5_enabled").checked = cfg.socks5_enabled !== false;
+    if ($("#socks5_port")) $("#socks5_port").value = cfg.socks5_port || 1080;
+    if ($("#lan_sharing")) $("#lan_sharing").checked = !!cfg.lan_sharing;
     if ($("#front_domain")) $("#front_domain").value = cfg.front_domain || "www.google.com";
     if ($("#log_level")) $("#log_level").value = cfg.log_level || "INFO";
-  } catch (e) {
-    console.error(e);
+  } catch (err) {
+    console.error(err);
   }
 }
 
 async function saveConfig(e) {
   if (e && e.preventDefault) e.preventDefault();
+  collectScriptIdsFromUi();
+  const ids = scriptIdRows.map((x) => (x || "").trim()).filter(Boolean);
+  let parallel = isParallelMode() && ids.length > 1;
+  if (!parallel) {
+    const filledIdx = scriptIdRows
+      .map((v, i) => ((v || "").trim() ? i : -1))
+      .filter((i) => i >= 0);
+    if (filledIdx.length && filledIdx.indexOf(activeScriptIndex) < 0) {
+      activeScriptIndex = filledIdx[0];
+    }
+  }
   const payload = {
     auth_key: ($("#auth_key") && $("#auth_key").value.trim()) || "",
-    script_id: ($("#script_id") && $("#script_id").value.trim()) || "",
+    webui_script_ids: ids,
+    webui_active_index: activeScriptIndex,
+    parallel_scripts: parallel,
     listen_host: ($("#listen_host") && $("#listen_host").value.trim()) || "127.0.0.1",
     listen_port: parseInt($("#listen_port") && $("#listen_port").value, 10) || 8085,
     socks5_enabled: $("#socks5_enabled") ? $("#socks5_enabled").checked : true,
@@ -259,7 +390,6 @@ async function saveConfig(e) {
     lan_sharing: $("#lan_sharing") ? $("#lan_sharing").checked : true,
     front_domain: ($("#front_domain") && $("#front_domain").value.trim()) || "www.google.com",
     log_level: ($("#log_level") && $("#log_level").value) || "INFO",
-    mode: "apps_script",
   };
   try {
     const r = await apiFetch("/api/config", {
@@ -267,16 +397,11 @@ async function saveConfig(e) {
       body: JSON.stringify(payload),
     });
     const data = await r.json();
-    if (data.ok) {
-      configReady = !!data.config_ready;
+    if (data && data.ok) {
       toast(t("toast.saved"), "success");
-      updateHeroHint();
-      await refreshProxyConfigs();
-      if (configReady) {
-        setCollapsed("#settingsToggle", "#settingsBody", true);
-      }
+      if (typeof refreshStatus === "function") refreshStatus();
     } else {
-      toast(data.error || t("toast.error"), "error");
+      toast((data && data.error) || t("toast.error"), "error");
     }
   } catch (err) {
     toast(String(err), "error");
@@ -285,7 +410,8 @@ async function saveConfig(e) {
 
 async function startProxy() {
   try {
-    if ($("#auth_key") && $("#auth_key").value.trim() && $("#script_id") && $("#script_id").value.trim()) {
+    collectScriptIdsFromUi();
+  if ($("#auth_key") && $("#auth_key").value.trim() && scriptIdRows.some((x) => (x || "").trim())) {
       await saveConfig({ preventDefault() {} });
     }
     const useSys = $("#systemProxy") ? $("#systemProxy").checked : true;
@@ -403,6 +529,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const form = $("#configForm");
   if (form) form.addEventListener("submit", saveConfig);
+  const addSid = $("#btnAddScriptId");
+  if (addSid) addSid.addEventListener("click", addScriptIdRow);
+  const par = $("#parallel_scripts");
+  if (par) par.addEventListener("change", syncParallelBodyClass);
   if ($("#btnStart")) $("#btnStart").addEventListener("click", startProxy);
   if ($("#btnStop")) $("#btnStop").addEventListener("click", stopProxy);
   if ($("#btnInstall")) $("#btnInstall").addEventListener("click", installDeps);

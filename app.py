@@ -24,11 +24,21 @@ from urllib.parse import urlparse
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 
-HERE = Path(__file__).resolve().parent
+# Paths: support normal Python run and PyInstaller (frozen) build
+if getattr(sys, "frozen", False):
+    # Bundle (read-only resources inside the package)
+    BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    # Writable dir next to the .exe (config.json, ca/)
+    HERE = Path(sys.executable).resolve().parent
+else:
+    BUNDLE_DIR = Path(__file__).resolve().parent
+    HERE = BUNDLE_DIR
+
 CONFIG_PATH = HERE / "config.json"
-EXAMPLE_PATH = HERE / "config.example.json"
-ORIGINAL_REQ = HERE / "requirements.txt"
-WEBUI_REQ = HERE / "requirements-webui.txt"
+EXAMPLE_PATH = BUNDLE_DIR / "config.example.json"
+ORIGINAL_REQ = BUNDLE_DIR / "requirements.txt"
+WEBUI_REQ = BUNDLE_DIR / "requirements-webui.txt"
+MAIN_PY = BUNDLE_DIR / "main.py"
 
 # Local-only UI origins (CSRF / CORS allowlist)
 ALLOWED_ORIGINS = (
@@ -37,7 +47,11 @@ ALLOWED_ORIGINS = (
     "http://[::1]:5050",
 )
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(BUNDLE_DIR / "templates"),
+    static_folder=str(BUNDLE_DIR / "static"),
+)
 app.config["SECRET_KEY"] = secrets.token_hex(16)
 # One random token per process; injected into the page and required on mutating APIs
 CSRF_TOKEN = secrets.token_urlsafe(32)
@@ -433,34 +447,47 @@ def get_lan_ips() -> list[str]:
     return ips
 
 
+def _placeholder_ids() -> set[str]:
+    return {
+        "",
+        "YOUR_APPS_SCRIPT_DEPLOYMENT_ID",
+        "CHANGE_ME_TO_A_STRONG_SECRET",
+        "your-secret-password-here",
+    }
+
+
+def _collect_script_ids(cfg: dict) -> list[str]:
+    """All known deployment IDs (Web UI list first, then core fields)."""
+    placeholders = _placeholder_ids()
+    ids: list[str] = []
+    raw = cfg.get("webui_script_ids")
+    if isinstance(raw, list) and raw:
+        ids = [str(x).strip() for x in raw if str(x).strip()]
+    if not ids:
+        raw = cfg.get("script_ids") if cfg.get("script_ids") else cfg.get("script_id")
+        if isinstance(raw, list):
+            ids = [str(x).strip() for x in raw if str(x).strip()]
+        elif isinstance(raw, str):
+            ids = [x.strip() for x in raw.split(",") if x.strip()]
+    return [i for i in ids if i not in placeholders]
+
+
 def is_config_ready(cfg: dict | None = None) -> bool:
     """True when auth_key and at least one real script_id look configured."""
     if cfg is None:
         cfg = load_config()
     key = (cfg.get("auth_key") or "").strip()
-    placeholders = {
-        "",
-        "CHANGE_ME_TO_A_STRONG_SECRET",
-        "your-secret-password-here",
-        "YOUR_APPS_SCRIPT_DEPLOYMENT_ID",
-    }
-    if key in placeholders:
+    if key in _placeholder_ids():
         return False
-    raw = cfg.get("script_ids") if cfg.get("script_ids") else cfg.get("script_id")
-    ids: list[str] = []
-    if isinstance(raw, list):
-        ids = [str(x).strip() for x in raw if str(x).strip()]
-    elif isinstance(raw, str):
-        ids = [x.strip() for x in raw.split(",") if x.strip()]
-    ids = [i for i in ids if i not in placeholders]
-    return bool(ids)
+    return bool(_collect_script_ids(cfg))
 
 
 def save_config(data: dict) -> None:
-    """Merge with existing/example defaults and normalize script_id fields.
+    """Merge defaults; map Web UI switch/parallel state onto core script fields.
 
-    Critical: never leave both script_id and script_ids set — the core
-    prefers script_ids when present, which can silently use stale IDs.
+    Web UI may send:
+      webui_script_ids, webui_active_index, parallel_scripts
+    Core gets either a single script_id or script_ids + parallel_relay.
     """
     base: dict = {}
     if EXAMPLE_PATH.exists():
@@ -478,39 +505,59 @@ def save_config(data: dict) -> None:
             pass
     base.update(data)
     base["mode"] = "apps_script"
+    base["auth_key"] = str(base.get("auth_key") or "").strip()
 
-    # Normalize auth_key
-    auth = str(base.get("auth_key") or "").strip()
-    base["auth_key"] = auth
-
-    # Normalize script id(s) — exclusive
-    raw = base.get("script_id")
-    if raw is None or raw == "":
-        raw = base.get("script_ids")
+    placeholders = _placeholder_ids()
     ids: list[str] = []
-    if isinstance(raw, list):
-        ids = [str(x).strip() for x in raw if str(x).strip()]
-    elif isinstance(raw, str):
-        ids = [x.strip() for x in raw.split(",") if x.strip()]
-    # Drop placeholder values
-    placeholders = {
-        "",
-        "YOUR_APPS_SCRIPT_DEPLOYMENT_ID",
-        "CHANGE_ME_TO_A_STRONG_SECRET",
-        "your-secret-password-here",
-    }
+    raw_list = base.get("webui_script_ids")
+    if isinstance(raw_list, list) and raw_list:
+        ids = [str(x).strip() for x in raw_list if str(x).strip()]
+    else:
+        raw = base.get("script_id")
+        if raw is None or raw == "":
+            raw = base.get("script_ids")
+        if isinstance(raw, list):
+            ids = [str(x).strip() for x in raw if str(x).strip()]
+        elif isinstance(raw, str):
+            ids = [x.strip() for x in raw.split(",") if x.strip()]
+
     ids = [i for i in ids if i not in placeholders]
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            uniq.append(i)
+    ids = uniq
+
+    try:
+        active = int(base.get("webui_active_index", 0))
+    except (TypeError, ValueError):
+        active = 0
+    active = max(0, min(active, len(ids) - 1)) if ids else 0
+
+    parallel = bool(base.get("parallel_scripts", False))
+    if parallel and len(ids) <= 1:
+        parallel = False
+
+    base["webui_script_ids"] = ids
+    base["webui_active_index"] = active
+    base["parallel_scripts"] = parallel
+
     base.pop("script_id", None)
     base.pop("script_ids", None)
-    if len(ids) > 1:
+    if not ids:
+        pass
+    elif parallel:
         base["script_ids"] = ids
-    elif len(ids) == 1:
-        base["script_id"] = ids[0]
+        base["parallel_relay"] = max(1, len(ids))
+    else:
+        base["script_id"] = ids[active]
+        base["parallel_relay"] = 1
 
     with CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(base, f, indent=2, ensure_ascii=False)
         f.write("\n")
-
 
 
 def _request_origin_ok() -> bool:
@@ -743,8 +790,12 @@ def api_start():
     env["PYTHONUNBUFFERED"] = "1"
 
     try:
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "--run-proxy", "-c", str(CONFIG_PATH)]
+        else:
+            cmd = [sys.executable, str(MAIN_PY), "-c", str(CONFIG_PATH)]
         proxy_process = subprocess.Popen(
-            [sys.executable, str(HERE / "main.py"), "-c", str(CONFIG_PATH)],
+            cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             cwd=str(HERE),
@@ -863,8 +914,12 @@ def api_scan():
     def _run():
         _append_log("[webui] Starting Google IP scan…")
         try:
+            if getattr(sys, "frozen", False):
+                scan_cmd = [sys.executable, "--run-proxy", "--scan", "-c", str(CONFIG_PATH)]
+            else:
+                scan_cmd = [sys.executable, str(MAIN_PY), "--scan", "-c", str(CONFIG_PATH)]
             p = subprocess.Popen(
-                [sys.executable, str(HERE / "main.py"), "--scan", "-c", str(CONFIG_PATH)],
+                scan_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=str(HERE),
@@ -900,7 +955,20 @@ def _open_browser():
         pass
 
 
+def _run_bundled_proxy() -> None:
+    """When frozen, re-exec path for main.py proxy/scan via same EXE."""
+    # Drop our flag; leave remaining args for main.py (-c, --scan, ...)
+    args = [a for a in sys.argv[1:] if a != "--run-proxy"]
+    sys.argv = [str(MAIN_PY)] + args
+    import runpy
+    runpy.run_path(str(MAIN_PY), run_name="__main__")
+
+
 if __name__ == "__main__":
+    if "--run-proxy" in sys.argv:
+        _run_bundled_proxy()
+        raise SystemExit(0)
+
     import atexit
     import signal
 

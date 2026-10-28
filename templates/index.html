@@ -79,8 +79,15 @@
               </div>
               <div class="field">
                 <label data-i18n="config.script_id">آیدی دیپلویمنت (Deployment ID)</label>
-                <input type="text" name="script_id" id="script_id" placeholder="AKfycb…" autocomplete="off" required />
-                <small data-i18n="config.script_id_hint">برای چند اسکریپت با کاما جدا کنید</small>
+                <div id="scriptIdList" class="script-id-list" aria-live="polite"></div>
+                <div class="script-id-actions">
+                  <button type="button" class="btn btn-ghost btn-sm" id="btnAddScriptId" data-i18n="config.add_script">+ افزودن Deployment ID</button>
+                </div>
+                <label class="check parallel-check">
+                  <input type="checkbox" id="parallel_scripts" />
+                  <span data-i18n="config.parallel">حالت هم‌زمان (مسابقه بین همهٔ IDها — parallel_relay)</span>
+                </label>
+                <small data-i18n="config.script_id_hint">روی یک ردیف کلیک کنید تا فعال شود (سبز). فقط همان برای پروکسی استفاده می‌شود مگر تیک هم‌زمان روشن باشد.</small>
               </div>
               <div class="grid-2">
                 <div class="field">
